@@ -9,17 +9,17 @@ A browser-based multiplayer 3D world where players explore connected rooms and p
 
 ## Project status
 
-Planning and documentation stage. The initial spec and component contract are drafts awaiting team review. Application code, local run instructions, and deployed URLs will be added as development begins.
+Planning and documentation stage. Ryan and Adam have approved the initial spec and component contract. Open decisions remain documented in those files. Application code, local run instructions, and deployed URLs will be added as development begins.
 
 ## Planned first release
 
 - Accounts and persistent player profiles with 20 avatar choices.
-- A shared 3D lobby with a target capacity of 16 users.
+- A shared 3D lobby and game rooms with an initial limit of 16 players across the whole world.
 - A room board showing availability, participants, timing, and scores.
 - One two-player cooperative mini-game, with participation locked during play.
 - Saved game results and personal win totals.
 
-The first mini-game is **TBD**. The capacity counting rule, game rules, controls, and multiplayer architecture still need agreement. See the spec for requirements, proposals, and acceptance criteria.
+The first mini-game is **TBD**. Game rules, controls, and multiplayer architecture still need agreement. Revisit capacity after performance testing. See the spec for requirements, proposals, and acceptance criteria.
 
 ## Selected services
 
@@ -32,8 +32,8 @@ These are selected services, not a claim that deployment is configured. The fron
 ## Repository
 
 - [Working agreement](doc/working-agreement.md)
-- [Initial spec — draft](doc/initial-spec.md)
-- [Component contract — draft](doc/component-contract.md)
+- [Initial spec](doc/initial-spec.md)
+- [Component contract](doc/component-contract.md)
 - [Shared agent instructions](AGENTS.md)
 - [Superpowers source and setup](.agents/SUPERPOWERS.md)
 - [Ryan's AI agent logs](agent-logs/ryan/README.md)
