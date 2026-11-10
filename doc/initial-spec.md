@@ -4,21 +4,21 @@
 
 **Date:** November 8, 2026
 
-**Status:** Draft for Ryan and Adam; not authorization to implement
+**Status:** Approved by Ryan and Adam
 
 ## Change History
 
 | Version | Date | Change | Approval |
 | --- | --- | --- | --- |
-| 0.1 | November 8, 2026 | Initial spec from updated meeting notes and Ryan's clarification | Pending Ryan and Adam |
+| 0.1 | November 8, 2026 | Initial spec from updated meeting notes, including PR #2 review clarifications | Approved |
 
 ## 1. Purpose and Decisions
 
 A browser-based 3D world where friends and classmates meet and play mini-games. Initial scope: accounts, a saved profile, a shared lobby, a room board, one two-player cooperative game, and persistent results.
 
-Source: Ryan's updated meeting notes and November 8 clarification. **Confirmed direction:** Supabase Auth/database, Vercel frontend hosting, separate dev/production environments, 20 avatar choices, a 16-user lobby, and Superpowers workflow. **First mini-game: TBD.** Colored-tile gameplay is an idea only.
+Source: Ryan's updated meeting notes and November 8 clarification. **Confirmed direction:** Supabase Auth/database, Vercel frontend hosting, separate dev/production environments, 20 avatar choices, an initial 16-player limit across the whole world (lobby and all game rooms), and Superpowers workflow. **First mini-game: TBD.** Colored-tile gameplay is an idea only.
 
-The [component contract](component-contract.md) owns interfaces. This spec owns product requirements. All publication and teammate approvals remain pending. Proposed defaults below need explicit agreement.
+The [component contract](component-contract.md) owns interfaces. This spec owns product requirements. Ryan and Adam approved this initial spec, including the PR #2 review clarifications. Proposed defaults below still need explicit agreement.
 
 ## 2. Player Journey
 
@@ -30,7 +30,7 @@ Register or sign in, load a profile, choose an avatar, enter the 3D lobby, check
 | --- | --- |
 | FR-01 | Supabase Auth manages accounts and sessions. Provider and verification flow remain open. |
 | FR-02 | Persist display name and avatar selection; offer exactly 20 options. Notes request Disney-style character roles without requiring exact matches. Actual assets remain undecided. |
-| FR-03 | Lobby capacity is 16. **Open:** Is this a limit on the whole world including game rooms, or only users physically in the lobby? Do not silently choose. |
+| FR-03 | Start with a maximum of 16 players total across the lobby and all game rooms. Moving between rooms does not consume another slot. Revisit capacity after performance testing. |
 | FR-04 | Show players joining, moving, and leaving the same space. Integrate two users first, then verify 3+ users and the full capacity. |
 | FR-05 | Board shows room availability, configured minimum/maximum players, participant display names, current score, and timing. **Proposed:** elapsed time from authoritative round start; remaining time only for timed games. |
 | FR-06 | Each game has configurable minimum/maximum players. The first game requires exactly two players; other game sizes are future extensions. |
@@ -41,7 +41,7 @@ Register or sign in, load a profile, choose an avatar, enter the 3D lobby, check
 | FR-11 | First release targets desktop browsers and keyboard controls. Camera view, controls, supported browsers, and exact layouts are open. |
 | FR-12 | Vercel hosts the UI with separate dev/production configuration and separate Supabase environments. Exact frontend framework and authoritative game runtime/transport remain open. |
 
-**Proposed disconnect policy:** Cancel the active two-player round when a participant explicitly leaves or is declared disconnected; explain why, award no win, and offer return to the lobby. Timeout, reconnect grace, and return-to-lobby capacity handling require agreement.
+**Proposed disconnect policy:** Cancel the active two-player round when a participant explicitly leaves or is declared disconnected; explain why, award no win, and offer return to the lobby. Timeout, reconnect grace, and slot retention during reconnect require agreement.
 
 ## 4. Scope Boundaries
 
@@ -63,12 +63,12 @@ These are planned checks, not tests already run.
 | ID | Expected result | Covers |
 | --- | --- | --- |
 | AC-01 | Separate accounts log in and reload their own saved profile after logout/login. Twenty avatar options are available and unknown IDs are rejected. | FR-01, FR-02 |
-| AC-02 | Clients consistently see joins, movement, and departures. Under the agreed capacity definition, 16 users are supported and a simultaneous excess admission is rejected without exceeding capacity. | FR-03, FR-04 |
+| AC-02 | Clients consistently see joins, movement, and departures. Support 16 players total distributed across the lobby and game rooms; reject a 17th admission, including concurrent joins. Moving between rooms preserves the player's existing world slot. | FR-03, FR-04 |
 | AC-03 | Board correctly displays availability, names, limits, score, and agreed timing without private account data. | FR-05 |
 | AC-04 | One player cannot start; two ready players create exactly one round. A third user cannot join a locked round but can see its board score. | FR-06, FR-07 |
 | AC-05 | Both players receive matching win/loss outcomes and may replay or return. Add concrete winning/losing sequences once the first game is chosen. | FR-08 |
 | AC-06 | Save one result per completed session in the correct table. Duplicate completion/retry does not duplicate history/wins. Verify the agreed win-count rule for both participants. | FR-09 |
-| AC-07 | Invalid/unauthenticated actions do not mutate state. Failed joins preserve location. Disconnect/cancellation and full-lobby return follow approved rules. Failed persistence is shown as pending/failed and retried without duplication. | FR-09, FR-10 |
+| AC-07 | Invalid/unauthenticated actions do not mutate state. Failed joins preserve location. Disconnect/cancellation follows approved rules; an admitted player can return to the lobby without requesting another world slot. Failed persistence is shown as pending/failed and retried without duplication. | FR-09, FR-10 |
 | AC-08 | The complete journey works in agreed desktop browsers with agreed controls. Dev and production connect only to their own Supabase environments. | FR-11, FR-12 |
 
 ## 7. Architecture Approaches to Review
@@ -84,6 +84,6 @@ Neither approach is selected. Vercel UI hosting and Supabase storage alone do no
 
 Milestones: review spec/contract -> accounts/profile -> two-user lobby/board/rooms -> game/results -> 3+ and full-capacity verification -> class-access deployment. Insert the course-required midpoint component swap at the actual scheduled point, with agreed additions in each other's components. Dates and swap features remain TBD. Class access is required 1–2 weeks before presentation.
 
-Implementation blockers: first game/rules; runtime/transport/framework; capacity definition and return admission; auth provider; disconnect/retry timing; controls/camera/browsers; board timing and win-count defaults; exact schemas. Avatar assets, performance targets, dates, and swap work also require agreement.
+Implementation blockers: first game/rules; runtime/transport/framework; reconnect slot retention; auth provider; disconnect/retry timing; controls/camera/browsers; board timing and win-count defaults; exact schemas. Avatar assets, performance targets, dates, and swap work also require agreement.
 
 Use Superpowers for subsequent design/planning. Keep this as the single initial spec rather than duplicating it under another documentation tree. Do not write a detailed game implementation plan until its design is approved.

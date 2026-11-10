@@ -4,7 +4,7 @@
 
 **Date:** November 8, 2026
 
-**Status:** Draft for Ryan and Adam to review
+**Status:** Approved by Ryan and Adam
 
 **Project option:** A — Contract-first build with midpoint swap
 
@@ -12,7 +12,7 @@
 
 | Version | Date | Change | Approval |
 | --- | --- | --- | --- |
-| 0.2 | November 8, 2026 | Updated notes: Supabase Auth/data, Vercel, separate environments, 16-user lobby, 20 avatars, room board/locking, game-specific results and wins | Pending Ryan and Adam |
+| 0.2 | November 8, 2026 | Updated notes and PR #2 review clarifications: Supabase Auth/data, Vercel, separate environments, 16-player whole-world limit, 20 avatars, room board/locking, game-specific results and wins | Approved |
 | 0.1 | November 5, 2026 | Initial proposed component contract | Pending Ryan and Adam |
 
 The [initial spec](initial-spec.md) defines product behavior and acceptance criteria. This contract defines component responsibilities and proposed interfaces. First game remains **TBD**. Proposed defaults require review. Transport and game-specific schemas are incomplete, so this is an initial contract, not yet a frozen implementation interface.
@@ -60,7 +60,7 @@ These are proposed adapter operations, not deployed endpoints. Both partners may
 | `GET /api/rooms` | Authenticated session | `200`: `{rooms: RoomSummary[]}` |
 | `GET /api/me/results` | Proposed cursor pagination, `limit` 1–50, default 20 | `200`: `{results: Result[], nextCursor: string or null}`; own participating results, newest first |
 
-Application errors: `{error: {code: string, message: string}}`. Proposed statuses: 400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 ROOM_NOT_FOUND, 409 ROOM_FULL/ROOM_LOCKED/LOBBY_FULL, 503 SERVICE_UNAVAILABLE. These mappings do not override Supabase Auth's own HTTP responses; normalize provider errors for UI display.
+Application errors: `{error: {code: string, message: string}}`. Proposed statuses: 400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 ROOM_NOT_FOUND, 409 ROOM_FULL/ROOM_LOCKED/WORLD_FULL, 503 SERVICE_UNAVAILABLE. These mappings do not override Supabase Auth's own HTTP responses; normalize provider errors for UI display.
 
 ## 5. Proposed Real-Time Interface
 
@@ -69,7 +69,7 @@ Transport and authoritative runtime are open. Client envelope: `{type, requestId
 | Direction | Event/payload | Purpose |
 | --- | --- | --- |
 | Client -> backend | `room.join {roomId}` | Atomic admission; acknowledge and send snapshot; failure preserves current location |
-| Client -> backend | `room.leave {}` | Return to lobby under agreed capacity/cancellation policy |
+| Client -> backend | `room.leave {}` | Return to lobby using the existing world slot; apply agreed cancellation policy |
 | Client -> backend | `player.move {sequence, input}` | Submit movement input; exact input depends on agreed controls |
 | Client -> backend | `game.ready {ready: boolean}` | Set readiness in the current waiting room |
 | Client -> backend | `game.action {sessionId, actionId, action}` | Validate membership/state; deduplicate; game-specific action schema TBD |
@@ -86,7 +86,7 @@ Additional proposed errors: NOT_IN_GAME, INVALID_ACTION, GAME_NOT_READY. Command
 
 ## 6. Shared Rules
 
-- Lobby capacity is 16; whether game-room participants count toward it remains open. Resolve return-to-lobby admission before implementation so a player cannot be stranded in a locked/completed room.
+- Start with a maximum of 16 players total across the lobby and all game rooms. The backend enforces world admission atomically and rejects excess admissions with WORLD_FULL. Room transfers, including return to the lobby, preserve the existing world slot. Per-game room limits still apply. Revisit total capacity after performance testing; reconnect slot retention remains open.
 - Each player has one current location. Failed joins preserve it. Room admission is atomic and enforces the configured maximum; players may join a waiting room before its minimum is reached. The minimum is required to start, not to admit the first player.
 - Initial game requires exactly two players. Start once when both are ready; fixed participants cannot be replaced mid-round.
 - Playing rooms reject new participants with ROOM_LOCKED. Others can see limited board information; in-room spectators are deferred.
@@ -118,4 +118,4 @@ Milestones: accounts/profile, two-user lobby/board/rooms, first game/results, 3+
 
 Both partners approve interface changes before building against them. Record versions and actual approvals at the top, newest first. Task branches from dev -> reviewed PR into dev -> separate release PR from dev to main. Humans review and merge. Breaking changes need a coordinated update plan; after 1.0 use major increments for incompatibilities and minor increments for compatible changes.
 
-This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: first game/rules, runtime/transport/framework, auth provider, capacity interpretation, timing/reconnect/retry semantics, concrete schemas, avatar assets, controls, performance targets, course dates, and swap additions.
+This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: first game/rules, runtime/transport/framework, auth provider, reconnect slot retention, timing/reconnect/retry semantics, concrete schemas, avatar assets, controls, performance targets, course dates, and swap additions.

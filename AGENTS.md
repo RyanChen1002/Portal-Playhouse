@@ -16,11 +16,9 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 
 - Agree on the design before writing a product implementation plan; obtain approval before implementing it.
 - Link each implementation plan to its approved specification and include checkable tasks and verification.
-- Follow task branch -> PR to `dev` -> separate release PR from `dev` to `main`.
-- Branch from the latest `dev`. Do not push directly to `dev` or `main`. Never merge into `main` or directly update a production database.
-- Human review is required before any merge. Agent review is supplementary; do not submit a human approval on someone's behalf.
-- Current work is local only. Do not stage, commit, push, create pull requests, or perform other Git actions until Ryan authorizes them.
-- The proposed detailed development rules are being reviewed separately in [PR #1](https://github.com/RyanChen1002/Portal-Playhouse/pull/1); do not assume they have merged. If `doc/development-rules.md` exists on the current branch, read it too.
+Read and follow the [approved development rules](https://github.com/RyanChen1002/Portal-Playhouse/blob/dev/doc/development-rules.md) for branching, review, merging, and AI assistance. Once available on this branch, read `doc/development-rules.md` locally.
+
+Current work is local only until Ryan authorizes staging, committing, or pushing.
 
 ## Ownership and evidence
 
