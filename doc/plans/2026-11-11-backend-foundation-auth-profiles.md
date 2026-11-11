@@ -38,9 +38,9 @@
 
 ### Error transport from SQL (pinned)
 
-Functions raise errors with `errcode` `'PT400'` / `'PT401'` / `'PT409'` / `'PT503'` and `message` set to the bare contract code (e.g. `'VALIDATION_ERROR'`). A human-readable explanation goes in `detail`. PostgREST turns `PTxyz` into HTTP status `xyz`. The real client maps:
+Functions raise errors with `errcode` `'PT400'` / `'PT401'` / `'PT409'` / `'PT503'` and `message` set to the bare contract code (e.g. `'VALIDATION_ERROR'`). A human-readable explanation goes in `detail`. The field name, when the error concerns one input, goes in `hint` (`'displayName'` or `'avatarId'`). PostgREST turns `PTxyz` into HTTP status `xyz`. Validation order in `update_me`: display name first, then avatar (spec §5.4). The real client maps:
 
-- `error.message` that's one of the codes → that code.
+- `error.message` that's one of the codes → that code, with `field` taken from `error.hint` when it's a known field name.
 - `error.code === '42501'` or HTTP 401 → `UNAUTHORIZED`.
 - Anything else → `SERVICE_UNAVAILABLE`.
 
@@ -133,7 +133,7 @@ README.md                                + local development section
 **Interfaces:**
 - Produces (all exported from `shared/contracts/index.ts`):
   - `type ErrorCode` = union of the eight Global Constraints codes; `const ERROR_CODES: readonly ErrorCode[]`
-  - `interface AppError { code: ErrorCode; message: string }`
+  - `type ErrorField = 'displayName' | 'avatarId' | 'email' | 'password'`; `interface AppError { code: ErrorCode; message: string; field?: ErrorField }`
   - `type Result<T> = { data: T; error: null } | { data: null; error: AppError }`
   - `const AVATAR_IDS` = the 20 IDs as a readonly tuple; `type AvatarId`; `const DEFAULT_AVATAR_ID = 'avatar-01'`
   - `interface Profile { id: string; displayName: string; avatarId: AvatarId; winsTotal: number }`
@@ -144,7 +144,7 @@ README.md                                + local development section
   - `validateDisplayName(raw: string): { ok: true; value: string } | { ok: false; error: AppError }` (normalizes, then checks)
   - `displayNameKey(normalized: string): string` (lowercase)
   - `isAvatarId(x: unknown): x is AvatarId`
-  - `validateCredentials({email, password}): AppError | null` (email must match `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`, otherwise `VALIDATION_ERROR`; password shorter than 8 code points gives `WEAK_PASSWORD`)
+  - `validateCredentials({email, password}): AppError | null` (email must match `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`, otherwise `VALIDATION_ERROR` with `field: 'email'`; password shorter than 8 code points gives `WEAK_PASSWORD` with `field: 'password'`). `validateDisplayName` errors carry `field: 'displayName'`.
 
 - [ ] **Step 1: Write failing tests** in `display-name.test.ts`:
   - `normalizes whitespace`: `normalizeDisplayName("  Ada  \t Lovelace  ")` → `"Ada Lovelace"`
@@ -155,7 +155,7 @@ README.md                                + local development section
   - `key is case-insensitive`: `displayNameKey("Alex") === displayNameKey("aLEX")`
   - `avatar ids`: `AVATAR_IDS.length === 20`, first `avatar-01`, last `avatar-20`; `isAvatarId("avatar-21") === false`
 
-  In `credentials.test.ts`: `"not-an-email"` → `VALIDATION_ERROR`; a 7-char password → `WEAK_PASSWORD`; valid pair → `null`.
+  In `credentials.test.ts`: `"not-an-email"` → `VALIDATION_ERROR` with `field: 'email'`; a 7-char password → `WEAK_PASSWORD` with `field: 'password'`; valid pair → `null`. In `display-name.test.ts`, every invalid case also asserts `field: 'displayName'`.
 - [ ] **Step 2:** `npm test`. Expected: FAIL (modules missing).
 - [ ] **Step 3:** Implement. Build `W` and `D` as `RegExp`s with the `u` flag from the exact ranges in Global Constraints.
 - [ ] **Step 4:** `npm test` and `npm run typecheck`. Expected: PASS, no type errors.
@@ -234,7 +234,7 @@ README.md                                + local development section
   - `public.get_me() returns jsonb`. `{id, displayName, avatarId, winsTotal: 0}`. `auth.uid()` null → `PT401 UNAUTHORIZED`; no profile row → `PT503 SERVICE_UNAVAILABLE`, also emitting a `raise warning` for the log. Grant to `authenticated`.
   - `public.update_me(display_name text default null, avatar_id text default null) returns jsonb`. Both null → `PT400 VALIDATION_ERROR`. A provided name that's invalid after normalizing (including empty) → `PT400`. Unknown avatar → `PT400`. Name taken by **another** user (matching `lower()`, `id <> auth.uid()`), or `unique_violation` → `PT409 DISPLAY_NAME_TAKEN`. Validate everything before writing, so nothing is partially applied. Returns the same shape as `get_me`. Grant to `authenticated`.
   - `public.check_display_name(display_name text) returns jsonb`. Invalid → `PT400`. Otherwise `{available: boolean}`, where `true` also when the only match is the caller's own profile. Grant to `anon, authenticated`.
-  - Error `message` = bare code, `detail` = human text (Global Constraints).
+  - Error `message` = bare code, `detail` = human text, `hint` = field name for name/avatar errors (Global Constraints). Validate the name before the avatar.
   - Note: an "empty string provided" and an "omitted" argument differ. `update_me(display_name => '')` is a validation error, not "unchanged".
 
 - [ ] **Step 1: Write failing tests.** Create the users in the test. Act as a user with `set local role authenticated; select set_config('request.jwt.claims', json_build_object('sub', <uuid>, 'role', 'authenticated')::text, true);` and as signed-out with `set local role anon`.
@@ -246,7 +246,8 @@ README.md                                + local development section
     - `update_me(avatar_id => 'avatar-21')` → `PT400`
     - another user owns `Alex`: `update_me(display_name => 'ALEX')` → `PT409 DISPLAY_NAME_TAKEN`
     - **Review focus 1:** the caller named `Alex` calls `update_me(display_name => 'Alex')` and then `'aLeX'` → both succeed, and the stored name becomes `aLeX`
-    - **Review focus 2:** `update_me(display_name => 'Fresh Name', avatar_id => 'avatar-99')` → `PT400`, and the name is unchanged afterwards
+    - **Review focus 2:** `update_me(display_name => 'Fresh Name', avatar_id => 'avatar-99')` → `PT400` with hint `avatarId`, and the name is unchanged afterwards
+    - `update_me(display_name => '', avatar_id => 'avatar-99')` → hint `displayName` (the name is checked first); `PT409` carries hint `displayName`
     - after renaming `Alex` → `Ada`, another user can claim `alex`
     - `check_display_name('  alex ')` → `{"available": false}` for another user and `true` for the owner; `check_display_name('a​b')` → `PT400`
     - `update_me` as user A never changes user B's row
@@ -276,7 +277,7 @@ README.md                                + local development section
 
   The mock follows the same rules as the database: validation first, a `VALIDATION_ERROR` for empty updates, `DISPLAY_NAME_TAKEN` via `displayNameKey` excluding self, `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `UNAUTHORIZED` when signed out, and `winsTotal: 0`. On sign-up it mirrors the trigger's fallback only if called with a name taken after its own pre-check, which can't happen in a single-threaded mock, so the mock's `signUp` simply returns `DISPLAY_NAME_TAKEN`.
 
-- [ ] **Step 1: Write the suite** (`contract-suite.ts`). Each `it` asserts both the `Result` shape and the exact code:
+- [ ] **Step 1: Write the suite** (`contract-suite.ts`). Each `it` asserts the `Result` shape, the exact code, and the exact `field`: `displayName`/`avatarId`/`email`/`password` as the spec assigns it, and **absent** for `INVALID_CREDENTIALS`, `UNAUTHORIZED`, `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, and `updateMe({})`. Cases:
   - `signUp returns profile with normalized name and avatar-01, winsTotal 0`
   - `signUp → signOut → signIn returns the same profile` (AC-01)
   - `getSession reflects sign in/out; onSessionChange fires and unsubscribes`
@@ -332,18 +333,19 @@ README.md                                + local development section
 - Produces:
   - `createPortalClient(config: { url: string; publishableKey: string; storage?: SupportedStorage }): PortalClient`. Each instance holds its own session (pass in-memory `storage` in tests so instances don't share sessions). Calls only `rpc('get_me')`, `rpc('update_me', {display_name, avatar_id})`, `rpc('check_display_name', {display_name})` and `auth.*`, never `from(<table>)`.
   - `mapRpcError(err: {message?: string; code?: string; status?: number} | null): AppError`
+  - `mapRpcError` sets `field` from `err.hint` only when it is `'displayName'` or `'avatarId'`.
   - `mapAuthError(err: {code?: string; status?: number; name?: string} | null): AppError`:
-    - `user_already_exists`/`email_exists` → `EMAIL_TAKEN`
-    - `invalid_credentials` → `INVALID_CREDENTIALS`
-    - `weak_password` → `WEAK_PASSWORD`
+    - `user_already_exists`/`email_exists` → `EMAIL_TAKEN`, field `email`
+    - `invalid_credentials` → `INVALID_CREDENTIALS`, no field
+    - `weak_password` → `WEAK_PASSWORD`, field `password`
     - `over_request_rate_limit`/`over_email_send_rate_limit`/status 429 → `RATE_LIMITED`
-    - `validation_failed`/`email_address_invalid` → `VALIDATION_ERROR`
+    - `validation_failed`/`email_address_invalid` → `VALIDATION_ERROR`, field `email`
     - `AuthRetryableFetchError` or status 0 → `SERVICE_UNAVAILABLE`
     - anything else → `SERVICE_UNAVAILABLE`
   - `signUp` order: `validateCredentials` → `validateDisplayName` → `checkDisplayName` (taken → `DISPLAY_NAME_TAKEN`) → `auth.signUp({email, password, options: {data: {display_name: normalized}}})` → `getMe`. Returns the Profile, which may carry a fallback name (spec §5.3).
   - `signIn` → `auth.signInWithPassword` → `getMe`.
 
-- [ ] **Step 1: Write failing unit tests** (`errors.test.ts`): one case per mapping row above, plus `mapRpcError({message:'DISPLAY_NAME_TAKEN', code:'PT409'})` → `DISPLAY_NAME_TAKEN`, `{code:'42501'}` → `UNAUTHORIZED`, `{message:'boom'}` → `SERVICE_UNAVAILABLE`.
+- [ ] **Step 1: Write failing unit tests** (`errors.test.ts`): one case per mapping row above, asserting code and field, plus `mapRpcError({message:'DISPLAY_NAME_TAKEN', code:'PT409', hint:'displayName'})` → `DISPLAY_NAME_TAKEN` with field `displayName`, an unknown hint → no field, `{code:'42501'}` → `UNAUTHORIZED`, `{message:'boom'}` → `SERVICE_UNAVAILABLE`.
 - [ ] **Step 2: Write failing integration tests:**
   - `real.contract.integration.test.ts`: `describeClientContract('real', …)` with a factory building `createPortalClient` from `getLocalSupabaseEnv()`.
   - `real.integration.test.ts`:

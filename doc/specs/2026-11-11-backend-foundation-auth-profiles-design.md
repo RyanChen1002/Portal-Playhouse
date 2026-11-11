@@ -143,7 +143,7 @@ All functions act only on the caller's own profile, using the identity from the 
 - Output keys are camelCase, exactly matching the contract's Profile model.
 - `update_me`: omitted fields are left unchanged. Null or empty input for a provided field is a validation error.
 - `check_display_name` is advisory only. The unique index is the real guarantee, and `update_me` still returns `DISPLAY_NAME_TAKEN` if a name is claimed in between. Display names are already public on the room board, so letting signed-out users check availability reveals nothing private. (**Proposal**)
-- Errors use stable, machine-readable codes the shared client maps to `{error: {code, message}}`:
+- Errors use stable, machine-readable codes the shared client maps to `{error: {code, message, field?}}`. `field` names the input the error belongs to (`displayName`, `avatarId`, `email`, or `password`) when there is one, so the UI can attach the error to that input and screen readers announce it there (WCAG 3.3.1, Error Identification). When several inputs are invalid, the first one checked is reported, in this order: display name, then avatar. `field` is omitted for errors that aren't about one input. It's deliberately omitted for `INVALID_CREDENTIALS`, so the response doesn't reveal whether the email or the password was wrong. Codes:
   - `VALIDATION_ERROR`: no fields provided; display name empty, too long, or containing disallowed characters after normalization; or unknown avatar ID.
   - `DISPLAY_NAME_TAKEN` (**new code**, `409`-class): the normalized name belongs to another player.
   - `UNAUTHORIZED`: not signed in, or invalid/expired session.
@@ -161,20 +161,21 @@ All functions act only on the caller's own profile, using the identity from the 
 
 The boundary Ryan builds against. **Joint ownership**: Ryan reviews it, and changes need both partners' approval (contract §9).
 
-- **`shared/contracts/`**: TypeScript types for `Profile`, error codes, and the `{error: {code, message}}` shape, plus the display-name rule and the 20 avatar IDs as constants and a shared validation function, so the UI can validate before calling.
+- **`shared/contracts/`**: TypeScript types for `Profile`, error codes, and the `{error: {code, message, field?}}` shape (§5.4), plus the display-name rule and the 20 avatar IDs as constants and a shared validation function, so the UI can validate before calling.
 - **The client interface** (one interface, two implementations):
   - `signUp({email, password, displayName})` and `signIn({email, password})` return the player's **Profile** on success, so the UI can go straight on (e.g. to an avatar picker). (**Proposal**)
   - `signOut()`; `getSession()` returning whether a player is signed in and their ID; a session-change subscription.
   - `getMe(): Profile`, `updateMe({displayName?, avatarId?}): Profile`, `checkDisplayName(displayName): {available}`.
   - Results are returned as a success/error union (`{data}` or `{error: {code, message}}`), not thrown, matching `supabase-js` conventions. (**Proposal**)
-- **Auth error normalization** (**Proposal**; new codes): Supabase Auth's provider errors are mapped to:
-  - `EMAIL_TAKEN`: email already registered.
-  - `INVALID_CREDENTIALS`: wrong email or password.
-  - `WEAK_PASSWORD`: too short or rejected by password rules.
-  - `RATE_LIMITED`: Supabase Auth rate limit hit.
-  - `SERVICE_UNAVAILABLE`: network failure or service down.
-  - `VALIDATION_ERROR`: malformed email or display name before calling Supabase.
-  - `DISPLAY_NAME_TAKEN`: from the sign-up pre-check.
+- **Auth error normalization** (**Proposal**; new codes): Supabase Auth's provider errors are mapped to these codes, with the `field` each carries:
+  - `EMAIL_TAKEN` (`email`): email already registered.
+  - `INVALID_CREDENTIALS` (no field): wrong email or password.
+  - `WEAK_PASSWORD` (`password`): too short or rejected by password rules.
+  - `RATE_LIMITED` (no field): Supabase Auth rate limit hit.
+  - `SERVICE_UNAVAILABLE` (no field): network failure or service down.
+  - `VALIDATION_ERROR` (`email` or `displayName`): malformed email or display name, caught before calling Supabase.
+  - `DISPLAY_NAME_TAKEN` (`displayName`): from the sign-up pre-check.
+- `message` is plain-language text suitable for developers and as a fallback. Ryan's UI is expected to show its own wording keyed on `code` and `field`.
 - **Real implementation**: built on `supabase-js`, configured with a project URL and publishable key. It knows function names, not table names.
 - **Mock implementation** in `shared/mocks/`: in-memory, same interface, same validation, uniqueness, and error codes, with sample data only. It's what Ryan uses before the backend is ready, and it's what makes switching a one-line change.
 - Location of the real client (e.g. `shared/client/`) is a **Proposal**. The contract only names `shared/contracts/` and `shared/mocks/`.
@@ -218,7 +219,7 @@ All automated tests run against the **local** stack only.
 1. **Display-name rule:** 1–24 characters (**Proposal**), case-insensitive uniqueness, the allowed characters, and whether the nameplate font handles emoji.
 2. Node version, test runner, package layout (§5.6).
 3. The client interface: result style, what sign-up/sign-in return, and the `shared/client/` location (§5.5).
-4. New error codes: `DISPLAY_NAME_TAKEN`, `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `WEAK_PASSWORD`, `RATE_LIMITED`.
+4. New error codes: `DISPLAY_NAME_TAKEN`, `EMAIL_TAKEN`, `INVALID_CREDENTIALS`, `WEAK_PASSWORD`, `RATE_LIMITED`. Also the optional `field` on errors, added to support accessible form errors.
 5. The research decisions (sign-in method, no confirmation, no reset, no OAuth).
 6. The suggestion in §5.3 about the avatar picker after sign-up is Ryan's to accept or ignore.
 
@@ -237,7 +238,7 @@ Contract §9 requires both partners to approve interface changes before anyone b
 
 - The profile operations become database functions called through `supabase.rpc` (`get_me`, `update_me`, `check_display_name`) instead of `GET/PATCH /api/me`, with the same semantics.
 - Display names are unique (case-insensitive) and follow the §5.2 rule.
-- The new error codes in §5.4 and §5.5.
+- The new error codes in §5.4 and §5.5, and the optional `field` on errors.
 - The shared client and its result style, and the `shared/client/` location.
 
 Ryan's approval of the pull request approves the spec and the contract update together. Implementation starts only after that approval.
