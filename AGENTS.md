@@ -8,7 +8,10 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 
 - Distinguish confirmed requirements, course requirements, proposals, and unanswered questions in the spec and contract.
 - Interview the user when a missing decision changes the scope or architecture. Do not invent approved requirements, technology choices, deadlines, or test results.
-- Ryan selected Superpowers. Read the [installation record](.agents/SUPERPOWERS.md) and [using-superpowers skill](.agents/skills/using-superpowers/SKILL.md), then relevant skills before acting. All 15 repository skills are discovered in this session; plugin hooks and discovery in other coding tools are not verified.
+- Ryan selected Superpowers. Read the [installation record](.agents/SUPERPOWERS.md), then use the relevant skills before acting.
+  - Codex (Ryan): read the [using-superpowers skill](.agents/skills/using-superpowers/SKILL.md) in `.agents/skills/`, then the relevant skills. All 15 repository skills are discovered in this session; plugin hooks are not installed.
+  - Claude Code (Adam): the Superpowers plugin (user scope, same pinned commit) provides the skills and session-start hook. Use the plugin's `superpowers:*` skills; the repo copy under `.agents/skills/` is identical and does not need to be read separately.
+  - Discovery in other coding tools is not verified.
 - Use the initial spec and component contract as the current review drafts. Keep a single requirements source rather than duplicating it under a toolkit folder.
 - Confirmed clarifications: first game remains TBD; Vercel hosts the frontend; Supabase provides Auth/database; use separate dev/production environments.
 
@@ -16,9 +19,7 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 
 - Agree on the design before writing a product implementation plan; obtain approval before implementing it.
 - Link each implementation plan to its approved specification and include checkable tasks and verification.
-Read and follow the [approved development rules](https://github.com/RyanChen1002/Portal-Playhouse/blob/dev/doc/development-rules.md) for branching, review, merging, and AI assistance. Once available on this branch, read `doc/development-rules.md` locally.
-
-Current work is local only until Ryan authorizes staging, committing, or pushing.
+- Read and follow the [approved development rules](doc/development-rules.md) for branching, review, merging, and AI assistance.
 
 ## Ownership and evidence
 
