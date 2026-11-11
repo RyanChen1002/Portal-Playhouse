@@ -21,8 +21,6 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 - Link each implementation plan to its approved specification and include checkable tasks and verification.
 - Read and follow the [approved development rules](doc/development-rules.md) for branching, review, merging, and AI assistance.
 
-Current work is local only until Ryan authorizes staging, committing, or pushing.
-
 ## Ownership and evidence
 
 - Ryan leads frontend and UI; Adam leads backend and data. Shared contracts and major architecture changes require joint decisions.
