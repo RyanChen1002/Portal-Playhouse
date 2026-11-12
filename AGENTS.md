@@ -1,5 +1,11 @@
 # Portal Playhouse: Agent Instructions
 
+## Change History
+
+| Date | Change |
+| --- | --- |
+| November 11, 2026 | Require change-history entries for project documentation updates; add this history section. |
+
 Read [the project README](README.md), [the working agreement](doc/working-agreement.md), [the initial spec](doc/initial-spec.md), and [the draft component contract](doc/component-contract.md) before starting work.
 
 This is the single shared agent instruction file for Ryan and Adam. If your coding tool does not load it automatically, explicitly ask the agent to read it at the start of the session.
@@ -20,6 +26,7 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 - Agree on the design before writing a product implementation plan; obtain approval before implementing it.
 - Link each implementation plan to its approved specification and include checkable tasks and verification.
 - Read and follow the [approved development rules](doc/development-rules.md) for branching, review, merging, and AI assistance.
+- Whenever creating or editing team-maintained project documentation, including this file, add or update a **Change History** section near the top. Record the actual date and a short, human-readable description, newest first. Include an initial entry for new documents and preserve older entries. Group edits from the same task into one entry; record approvals only when explicitly given. This requirement does not authorize editing upstream skill files or writing personal agent-log reflections.
 
 ## Ownership and evidence
 
