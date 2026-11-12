@@ -1,12 +1,10 @@
 # Portal Playhouse — Governance
 
-**Last updated:** 11/11/2026
-
 ## Change History
 
-| Date | Change |
-| --- | --- |
-| 11/11/2026 | Created the initial risk register and added the project MIT license. Added change history, a shorter risk table, and mitigation details while preserving ratings, owners, and statuses. Standardized dates to MM/DD/YYYY and combined same-day changes. |
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.1 | 11/11/2026 | Created the initial risk register and added the project MIT license. Added change history, a shorter risk table, and mitigation details while preserving ratings, owners, and statuses. Standardized dates to MM/DD/YYYY, combined same-day changes, aligned history columns, and removed the redundant last-updated header. |
 
 ## Purpose
 
