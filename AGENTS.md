@@ -4,7 +4,7 @@
 
 | Date | Change |
 | --- | --- |
-| 11/11/2026 | Require change history for project documentation; use MM/DD/YYYY dates and one row per date, newest first. |
+| 11/11/2026 | Require change history for project documentation; use MM/DD/YYYY dates and one row per date, newest first. Require current project documents to be read before development and reread after updates or branch changes. |
 
 Read [the project README](README.md), [the working agreement](doc/working-agreement.md), [the initial spec](doc/initial-spec.md), and [the draft component contract](doc/component-contract.md) before starting work.
 
@@ -23,6 +23,7 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 
 ## Workflow
 
+- **Required reading before development:** Before writing or changing code for each task, read the current [governance document](doc/governance.md), [relevant specification](doc/initial-spec.md), [component contract](doc/component-contract.md), and [development rules](doc/development-rules.md) from the working branch. Do not rely only on previous chat context or pinned references. Reread affected documents after they change or after switching branches. Follow their requirements throughout implementation and verification. If a required document is missing or the instructions conflict, explain the issue and resolve it before proceeding with affected work.
 - Agree on the design before writing a product implementation plan; obtain approval before implementing it.
 - Link each implementation plan to its approved specification and include checkable tasks and verification.
 - Read and follow the [approved development rules](doc/development-rules.md) for branching, review, merging, and AI assistance.
