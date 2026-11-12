@@ -2,7 +2,7 @@
 
 **Version:** 0.1
 
-**Date:** November 8, 2026
+**Date:** 11/08/2026
 
 **Status:** Approved by Ryan and Adam
 
@@ -10,7 +10,8 @@
 
 | Version | Date | Change | Approval |
 | --- | --- | --- | --- |
-| 0.1 | November 8, 2026 | Initial spec from updated meeting notes, including PR #2 review clarifications | Approved |
+| — | 11/11/2026 | Standardized history dates to MM/DD/YYYY; no requirement or version changes. | Requested by Ryan |
+| 0.1 | 11/08/2026 | Initial spec from updated meeting notes, including PR #2 review clarifications | Approved |
 
 ## 1. Purpose and Decisions
 
