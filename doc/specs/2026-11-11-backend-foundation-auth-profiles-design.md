@@ -1,6 +1,8 @@
 # Backend Design: Supabase Foundation, Auth, and Profiles
 
-**Date:** 2026-11-11
+**Version:** 0.1
+
+**Date:** 11/12/2026
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
@@ -11,6 +13,12 @@
 **Implements:** [initial spec](../initial-spec.md) FR-01, FR-02, FR-12 (backend part), AC-01, and the auth/profile parts of AC-07 and AC-08. **Interfaces:** [component contract](../component-contract.md) §2–§4. **Research:** [auth provider](../research/auth-provider.md).
 
 Labels used below: **Decided** means Adam decided it in brainstorming, pending Ryan's review in the PR. **Proposal** means a call made while drafting, for Ryan and Adam to accept or change.
+
+## Change History
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.1 | 11/12/2026 | Added the initial backend design for the Supabase foundation, auth, and profiles; contract update renumbered to v0.4. |
 
 ## 1. Intent
 
@@ -32,7 +40,7 @@ Why this boundary matters: Ryan and Adam work in parallel and swap components at
 - Get and update own profile through database functions that return the contract's Profile shape and error format.
 - A shared client (types, real implementation, mock) in `shared/`.
 - Automated database, integration, and contract tests, run locally and on every pull request.
-- A contract update (v0.3) recording the interface changes this design makes (§10).
+- A contract update (v0.4) recording the interface changes this design makes (§10).
 
 **Non-goals (this spec)**
 
@@ -232,9 +240,9 @@ All automated tests run against the **local** stack only.
 - CI workflow details and caching.
 - Internal structure of tests and the account-helper script.
 
-## 10. Contract update (v0.3)
+## 10. Contract update (v0.4)
 
-Contract §9 requires both partners to approve interface changes before anyone builds against them. Alongside this spec, the same pull request proposes a **component contract v0.3** recording:
+Contract §9 requires both partners to approve interface changes before anyone builds against them. Alongside this spec, the same pull request proposes a **component contract v0.4** recording:
 
 - The profile operations become database functions called through `supabase.rpc` (`get_me`, `update_me`, `check_display_name`) instead of `GET/PATCH /api/me`, with the same semantics.
 - Display names are unique (case-insensitive) and follow the §5.2 rule.

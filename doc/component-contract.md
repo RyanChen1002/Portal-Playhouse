@@ -1,20 +1,19 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.3 (proposed)
+**Version:** 0.4
 
-**Date:** November 11, 2026
-
-**Status:** v0.3 proposed by Adam, pending Ryan's approval. v0.2 approved by Ryan and Adam.
+**Date:** 11/12/2026
 
 **Project option:** A — Contract-first build with midpoint swap
 
 ## Change History
 
-| Version | Date | Change | Approval |
-| --- | --- | --- | --- |
-| 0.3 | November 11, 2026 | Auth: email + password, no confirmation/reset/OAuth. Profile operations become database functions behind a shared TypeScript client and mock. Unique display names with an agreed rule. New error codes and an optional error `field`. Adds `shared/client/`. Details: [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) | Pending Ryan |
-| 0.2 | November 8, 2026 | Updated notes and PR #2 review clarifications: Supabase Auth/data, Vercel, separate environments, 16-player whole-world limit, 20 avatars, room board/locking, game-specific results and wins | Approved |
-| 0.1 | November 5, 2026 | Initial proposed component contract | Approved |
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.4 | 11/12/2026 | Auth: email + password, no confirmation/reset/OAuth. Profile operations become database functions behind a shared TypeScript client and mock. Unique display names with an agreed rule. New error codes and an optional error `field`. Adds `shared/client/`. Details: [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) |
+| 0.3 | 11/11/2026 | Standardized history dates and columns; removed approval status fields and updated the document version. Requirements unchanged. |
+| 0.2 | 11/08/2026 | Updated notes and PR #2 review clarifications: Supabase Auth/data, Vercel, separate environments, 16-player whole-world limit, 20 avatars, room board/locking, game-specific results and wins |
+| 0.1 | 11/05/2026 | Initial proposed component contract |
 
 The [initial spec](initial-spec.md) defines product behavior and acceptance criteria. This contract defines component responsibilities and proposed interfaces. First game remains **TBD**. Proposed defaults require review. Transport and game-specific schemas are incomplete, so this is an initial contract, not yet a frozen implementation interface.
 
@@ -28,7 +27,7 @@ The [initial spec](initial-spec.md) defines product behavior and acceptance crit
 
 ## 2. Authentication and Trust
 
-Supabase Auth handles sign-up, sign-in, sign-out, and sessions. The earlier custom `/api/auth/register`, `/api/auth/login`, and `/api/auth/logout` proposal is superseded: use the selected Supabase client flow. **Proposed v0.3:** email + password only, minimum password length 8. No email confirmation, password reset, magic links, OAuth, or anonymous sign-in for the first release ([auth research](research/auth-provider.md)). Frontend framework remains open; the shared client (§4) wraps `@supabase/supabase-js`.
+Supabase Auth handles sign-up, sign-in, sign-out, and sessions. The earlier custom `/api/auth/register`, `/api/auth/login`, and `/api/auth/logout` proposal is superseded: use the selected Supabase client flow. **Proposed v0.4:** email + password only, minimum password length 8. No email confirmation, password reset, magic links, OAuth, or anonymous sign-in for the first release ([auth research](research/auth-provider.md)). Frontend framework remains open; the shared client (§4) wraps `@supabase/supabase-js`.
 
 Protected application requests present a Supabase access token; the backend verifies it and derives identity from the authenticated session, not a client player ID. For the profile functions (§4), Supabase verifies the token and the functions use only the session's user ID. Define real-time authentication/refresh once transport is chosen. Invalid/expired identity cannot mutate protected state.
 
@@ -48,9 +47,9 @@ Server-generated string IDs; Supabase user identity for player IDs; UTC ISO 8601
 | Session | `id`, `roomId`, `gameType`, fixed `playerIds`, `status: waiting/playing/finished/cancelled`, `startedAt`, `completedAt` (nullable timestamps), `revision: integer` |
 | Result | `id`, `sessionId`, `gameType`, `playerIds: string[]`, `outcome: win/loss`, `score: number or null`, `completedAt: timestamp` |
 
-Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; actual assets remain open. Reject unknown IDs. **Proposed v0.3:** new profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
+Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; actual assets remain open. Reject unknown IDs. **Proposed v0.4:** new profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
 
-**Display names (proposed v0.3):** trim leading and trailing whitespace and collapse internal runs to one space. The stored and returned name is that normalized form. It must be 1–24 Unicode code points, with no control or invisible/formatting characters. Names are **unique, compared case-insensitively**, and players may change them later, including changing only the case of their own name. The exact character sets are in the [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) and its plan. `shared/contracts/` exports the rule so the UI can validate before calling.
+**Display names (proposed v0.4):** trim leading and trailing whitespace and collapse internal runs to one space. The stored and returned name is that normalized form. It must be 1–24 Unicode code points, with no control or invisible/formatting characters. Names are **unique, compared case-insensitively**, and players may change them later, including changing only the case of their own name. The exact character sets are in the [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) and its plan. `shared/contracts/` exports the rule so the UI can validate before calling.
 
 World bounds, axes, score units, and movement cadence require agreement. Board timing is derived from authoritative start time; remaining time applies only to timed games.
 
@@ -58,9 +57,9 @@ World bounds, axes, score units, and movement cadence require agreement. Board t
 
 These are proposed adapter operations, not deployed endpoints. Both partners may select Supabase SDK/RPC equivalents before implementation while preserving agreed semantics.
 
-**Proposed v0.3: the shared client is the frontend/backend boundary.** The frontend calls a TypeScript `PortalClient`, not Supabase tables or endpoints directly. There are two implementations with the same interface and behavior: a real one in `shared/client/` and an in-memory mock in `shared/mocks/`. One contract test suite runs against both. Every method returns `{data, error: null}` or `{data: null, error}` and never throws.
+**Proposed v0.4: the shared client is the frontend/backend boundary.** The frontend calls a TypeScript `PortalClient`, not Supabase tables or endpoints directly. There are two implementations with the same interface and behavior: a real one in `shared/client/` and an in-memory mock in `shared/mocks/`. One contract test suite runs against both. Every method returns `{data, error: null}` or `{data: null, error}` and never throws.
 
-| Client method | Backend (proposed v0.3) | Success data | Replaces |
+| Client method | Backend (proposed v0.4) | Success data | Replaces |
 | --- | --- | --- | --- |
 | `signUp({email, password, displayName})` | Supabase Auth; a database trigger creates the profile | Profile | — |
 | `signIn({email, password})` | Supabase Auth | Profile | — |
@@ -72,16 +71,16 @@ These are proposed adapter operations, not deployed endpoints. Both partners may
 
 If a display name is taken between `signUp`'s availability check and account creation, the account is still created with a generated `Player-xxxxxx` name, and the returned Profile shows it.
 
-Not yet changed by v0.3 (later milestones):
+Not yet changed by v0.4 (later milestones):
 
 | Operation | Input | Success |
 | --- | --- | --- |
 | `GET /api/rooms` | Authenticated session | `200`: `{rooms: RoomSummary[]}` |
 | `GET /api/me/results` | Proposed cursor pagination, `limit` 1–50, default 20 | `200`: `{results: Result[], nextCursor: string or null}`; own participating results, newest first |
 
-Application errors: `{error: {code: string, message: string, field?: string}}`. **Proposed v0.3** adds the optional `field`: `displayName`, `avatarId`, `email`, or `password`. It names the input an error belongs to, so the UI can attach the message to that input for screen readers (WCAG 3.3.1). It's omitted when no single input is at fault, and always for `INVALID_CREDENTIALS`. `message` is fallback text; the UI shows its own wording keyed on `code` and `field`.
+Application errors: `{error: {code: string, message: string, field?: string}}`. **Proposed v0.4** adds the optional `field`: `displayName`, `avatarId`, `email`, or `password`. It names the input an error belongs to, so the UI can attach the message to that input for screen readers (WCAG 3.3.1). It's omitted when no single input is at fault, and always for `INVALID_CREDENTIALS`. `message` is fallback text; the UI shows its own wording keyed on `code` and `field`.
 
-Proposed statuses: 400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 ROOM_NOT_FOUND, 409 ROOM_FULL/ROOM_LOCKED/WORLD_FULL, 503 SERVICE_UNAVAILABLE. **Proposed v0.3 adds:** 409 DISPLAY_NAME_TAKEN. The shared client also normalizes Supabase Auth's errors into EMAIL_TAKEN, INVALID_CREDENTIALS, WEAK_PASSWORD, RATE_LIMITED, VALIDATION_ERROR, and SERVICE_UNAVAILABLE. These mappings do not override Supabase Auth's own HTTP responses; they are what the client returns to the UI.
+Proposed statuses: 400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 ROOM_NOT_FOUND, 409 ROOM_FULL/ROOM_LOCKED/WORLD_FULL, 503 SERVICE_UNAVAILABLE. **Proposed v0.4 adds:** 409 DISPLAY_NAME_TAKEN. The shared client also normalizes Supabase Auth's errors into EMAIL_TAKEN, INVALID_CREDENTIALS, WEAK_PASSWORD, RATE_LIMITED, VALIDATION_ERROR, and SERVICE_UNAVAILABLE. These mappings do not override Supabase Auth's own HTTP responses; they are what the client returns to the UI.
 
 ## 5. Proposed Real-Time Interface
 
@@ -129,7 +128,7 @@ Proposed persistence rules:
 
 ## 8. Parallel Work and Verification
 
-Ryan develops against shared mocks; Adam implements matching operations/events. Proposed future schema/mock locations: `shared/contracts/` and `shared/mocks/` (not yet created). **Proposed v0.3** adds `shared/client/` for the real client. Update schemas, client, mocks, and relevant checks together.
+Ryan develops against shared mocks; Adam implements matching operations/events. Proposed future schema/mock locations: `shared/contracts/` and `shared/mocks/` (not yet created). **Proposed v0.4** adds `shared/client/` for the real client. Update schemas, client, mocks, and relevant checks together.
 
 Verify the spec's AC-01 through AC-08: distinct accounts/persistence; 20 avatars; consistent movement and capacity; room board privacy; atomic start/locked-room rejection; matching outcomes; exactly-once persistence/wins; invalid actions/disconnects; desktop browsers and environment separation. These checks are planned, not passed runtime tests.
 

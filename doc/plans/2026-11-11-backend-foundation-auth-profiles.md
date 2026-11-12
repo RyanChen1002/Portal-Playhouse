@@ -2,6 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Version:** 0.1
+
+**Date:** 11/12/2026
+
+## Change History
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.1 | 11/12/2026 | Added the initial implementation plan for backend foundation, auth, and profiles; contract reference updated to v0.4. |
+
 **Goal:** Local Supabase stack, profile schema with unique display names, three database functions, and a shared TypeScript client (real + mock) with database, integration, and contract tests running in CI.
 
 **Architecture:** Tables live in an unexposed `private` schema. Clients reach them only through three `SECURITY DEFINER` functions in `public`, called with `supabase.rpc`. A sign-up trigger creates every profile. `shared/` holds the contract types, the display-name rule, a real client over `supabase-js`, and an in-memory mock. One contract test suite runs against both the mock and the real client.
@@ -10,7 +20,7 @@
 
 **Spec:** [doc/specs/2026-11-11-backend-foundation-auth-profiles-design.md](../specs/2026-11-11-backend-foundation-auth-profiles-design.md). Read it before starting; this plan argues from it.
 
-**Start condition:** Do not start until Ryan has approved the pull request containing the spec and the contract v0.3 update (spec §10), and it is merged into `dev`. Then create `feature/backend-foundation-auth-profiles` from the latest `dev`.
+**Start condition:** Do not start until Ryan has approved the pull request containing the spec and the contract v0.4 update (spec §10), and it is merged into `dev`. Then create `feature/backend-foundation-auth-profiles` from the latest `dev`.
 
 ## Global Constraints
 

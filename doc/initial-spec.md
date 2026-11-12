@@ -1,16 +1,15 @@
 # Portal Playhouse — Initial Specification
 
-**Version:** 0.1
+**Version:** 0.2
 
-**Date:** November 8, 2026
-
-**Status:** Approved by Ryan and Adam
+**Date:** 11/11/2026
 
 ## Change History
 
-| Version | Date | Change | Approval |
-| --- | --- | --- | --- |
-| 0.1 | November 8, 2026 | Initial spec from updated meeting notes, including PR #2 review clarifications | Approved |
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.2 | 11/11/2026 | Standardized history dates and columns; removed approval status fields and updated the document version. Requirements unchanged. |
+| 0.1 | 11/08/2026 | Initial spec from updated meeting notes, including PR #2 review clarifications |
 
 ## 1. Purpose and Decisions
 

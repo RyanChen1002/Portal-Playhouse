@@ -1,6 +1,14 @@
 # Development and Merge Rules
 
-Status: Approved by Ryan and Adam in the PR discussion. This document supplements the [team working agreement](working-agreement.md).
+## Change History
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.3 | 11/11/2026 | Added consistent change history and removed the approval-status header. Workflow rules unchanged. |
+| 0.2 | 11/09/2026 | Clarified teammate approval comments, author merging, and the PR convention. |
+| 0.1 | 11/05/2026 | Created development branch and human review rules. |
+
+This document supplements the [team working agreement](working-agreement.md).
 
 ## Branch flow
 

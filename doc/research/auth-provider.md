@@ -1,6 +1,8 @@
 # Research: Supabase Auth Sign-In Method
 
-**Date:** 2026-11-11
+**Version:** 0.1
+
+**Date:** 11/12/2026
 
 **Author:** Adam, with AI-assisted research (Claude Code)
 
@@ -13,6 +15,12 @@
 3. Password reset: **not needed** for the first release, so no custom SMTP provider for now. §6 is kept for reference.
 4. GitHub/Google sign-in: **not wanted**, now or later.
 5. Supabase projects: **Adam owns** both the dev and production projects. The 1-week inactivity pause is accepted; paused projects are resumed manually when needed.
+
+## Change History
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.1 | 11/12/2026 | Added the auth sign-in method research and the decisions recorded on 11/11/2026. |
 
 ## 1. Question
 

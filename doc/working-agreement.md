@@ -1,5 +1,12 @@
 # Team Working Agreement
 
+## Change History
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.2 | 11/11/2026 | Added consistent change history. Team agreement unchanged. |
+| 0.1 | 11/04/2026 | Added the initial working agreement to the repository. |
+
 ## Project Choice
 
 We chose **Project Option A** because we want to collaborate closely throughout development. We do not have a strong preference for adopting a new platform, and this option gives us a clear way to build the project together.

@@ -34,6 +34,7 @@ These are selected services, not a claim that deployment is configured. The fron
 - [Working agreement](doc/working-agreement.md)
 - [Initial spec](doc/initial-spec.md)
 - [Component contract](doc/component-contract.md)
+- [Future features](doc/future-features.md)
 - [Shared agent instructions](AGENTS.md)
 - [Superpowers source and setup](.agents/SUPERPOWERS.md)
 - [Ryan's AI agent logs](agent-logs/ryan/README.md)
