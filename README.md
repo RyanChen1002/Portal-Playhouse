@@ -38,7 +38,7 @@ These are selected services, not a claim that deployment is configured. The fron
 - [Shared agent instructions](AGENTS.md)
 - [Superpowers source and setup](.agents/SUPERPOWERS.md)
 - [Ryan's AI agent logs](agent-logs/ryan/README.md)
-- [Adam's AI agent logs](agent-logs/adam/README.md)
+- [Adam's AI agent log](agent-logs/adam/agentlog.md)
 
 The personal agent-log folders contain logs only. Application code will be organized in shared folders by function as development begins.
 

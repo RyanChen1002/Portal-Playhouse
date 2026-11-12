@@ -6,13 +6,13 @@
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
-**Status:** Approved by Adam on 2026-11-11. Pending Ryan's review in the pull request.
+**Status:** Approved by Adam on 2026-11-11. Approved by Ryan in the pull request.
 
 **Plan:** [implementation plan](../plans/2026-11-11-backend-foundation-auth-profiles.md)
 
 **Implements:** [initial spec](../initial-spec.md) FR-01, FR-02, FR-12 (backend part), AC-01, and the auth/profile parts of AC-07 and AC-08. **Interfaces:** [component contract](../component-contract.md) §2–§4. **Research:** [auth provider](../research/auth-provider.md).
 
-Labels used below: **Decided** means Adam decided it in brainstorming, pending Ryan's review in the PR. **Proposal** means a call made while drafting, for Ryan and Adam to accept or change.
+Labels used below: **Decided** means Adam decided it in brainstorming; Ryan approved it in the PR. **Proposal** means a call made while drafting, accepted by Ryan's approval of the PR; changes need both partners' agreement.
 
 ## Change History
 
@@ -188,7 +188,7 @@ The boundary Ryan builds against. **Joint ownership**: Ryan reviews it, and chan
 - **Mock implementation** in `shared/mocks/`: in-memory, same interface, same validation, uniqueness, and error codes, with sample data only. It's what Ryan uses before the backend is ready, and it's what makes switching a one-line change.
 - Location of the real client (e.g. `shared/client/`) is a **Proposal**. The contract only names `shared/contracts/` and `shared/mocks/`.
 
-### 5.6 Repository layout and tooling (Proposals, pending Ryan's agreement where shared)
+### 5.6 Repository layout and tooling (Proposals, accepted with Ryan's PR approval)
 
 - `supabase/`: CLI config, migrations, seed, and database tests.
 - `shared/`: contracts, client, mocks, and their tests.

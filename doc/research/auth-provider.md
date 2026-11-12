@@ -6,9 +6,9 @@
 
 **Author:** Adam, with AI-assisted research (Claude Code)
 
-**Status:** Research complete. Adam decided the §7 questions on 2026-11-11 (below); Ryan reviews them in this branch's pull request. The auth provider was an open decision in the [initial spec](../initial-spec.md) (FR-01, §8) and the [component contract](../component-contract.md) (§2). Record the final outcome in the spec/contract change history.
+**Status:** Research complete. Adam decided the §7 questions on 2026-11-11 (below); Ryan reviewed and approved them in this branch's pull request. The auth provider was an open decision in the [initial spec](../initial-spec.md) (FR-01, §8) and the [component contract](../component-contract.md) (§2). Record the final outcome in the spec/contract change history.
 
-**Decisions (2026-11-11, Adam; pending Ryan's review):**
+**Decisions (2026-11-11, Adam; approved by Ryan in the pull request):**
 
 1. Sign-in method: **Option A**, email + password.
 2. Email confirmation: **off** in dev and production.
