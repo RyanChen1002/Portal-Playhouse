@@ -1,13 +1,12 @@
 # Portal Playhouse — Governance
 
-**Last updated:** November 11, 2026
+**Last updated:** 11/11/2026
 
 ## Change History
 
 | Date | Change |
 | --- | --- |
-| November 11, 2026 | Added change history and reorganized the risk register for easier reading. Preserved the initial risk ratings, owners, and statuses. |
-| November 11, 2026 | Initial in-class governance document: recorded five project risks and mitigation plans; added the project MIT license. |
+| 11/11/2026 | Created the initial risk register and added the project MIT license. Added change history, a shorter risk table, and mitigation details while preserving ratings, owners, and statuses. Standardized dates to MM/DD/YYYY and combined same-day changes. |
 
 ## Purpose
 

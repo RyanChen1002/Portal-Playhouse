@@ -2,7 +2,7 @@
 
 **Version:** 0.2
 
-**Date:** November 8, 2026
+**Date:** 11/08/2026
 
 **Status:** Approved by Ryan and Adam
 
@@ -12,8 +12,9 @@
 
 | Version | Date | Change | Approval |
 | --- | --- | --- | --- |
-| 0.2 | November 8, 2026 | Updated notes and PR #2 review clarifications: Supabase Auth/data, Vercel, separate environments, 16-player whole-world limit, 20 avatars, room board/locking, game-specific results and wins | Approved |
-| 0.1 | November 5, 2026 | Initial proposed component contract | Approved |
+| — | 11/11/2026 | Standardized history dates to MM/DD/YYYY; no requirement or version changes. | Requested by Ryan |
+| 0.2 | 11/08/2026 | Updated notes and PR #2 review clarifications: Supabase Auth/data, Vercel, separate environments, 16-player whole-world limit, 20 avatars, room board/locking, game-specific results and wins | Approved |
+| 0.1 | 11/05/2026 | Initial proposed component contract | Approved |
 
 The [initial spec](initial-spec.md) defines product behavior and acceptance criteria. This contract defines component responsibilities and proposed interfaces. First game remains **TBD**. Proposed defaults require review. Transport and game-specific schemas are incomplete, so this is an initial contract, not yet a frozen implementation interface.
 

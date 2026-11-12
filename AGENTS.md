@@ -4,7 +4,7 @@
 
 | Date | Change |
 | --- | --- |
-| November 11, 2026 | Require change-history entries for project documentation updates; add this history section. |
+| 11/11/2026 | Require change history for project documentation; use MM/DD/YYYY dates and one row per date, newest first. |
 
 Read [the project README](README.md), [the working agreement](doc/working-agreement.md), [the initial spec](doc/initial-spec.md), and [the draft component contract](doc/component-contract.md) before starting work.
 
@@ -26,7 +26,7 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
 - Agree on the design before writing a product implementation plan; obtain approval before implementing it.
 - Link each implementation plan to its approved specification and include checkable tasks and verification.
 - Read and follow the [approved development rules](doc/development-rules.md) for branching, review, merging, and AI assistance.
-- Whenever creating or editing team-maintained project documentation, including this file, add or update a **Change History** section near the top. Record the actual date and a short, human-readable description, newest first. Include an initial entry for new documents and preserve older entries. Group edits from the same task into one entry; record approvals only when explicitly given. This requirement does not authorize editing upstream skill files or writing personal agent-log reflections.
+- Whenever creating or editing team-maintained project documentation, including this file, add or update a **Change History** section near the top. Record the actual date in **MM/DD/YYYY** format (for example, `11/06/2026`) and a short, human-readable description, newest first. Include an initial entry for new documents and preserve older entries. Use one row per date in each document: combine same-day changes in the Change cell, keeping any distinct versions and approval details in that row. For formatting-only edits, record the change without inventing a new content version; record approvals only when explicitly given. This requirement does not authorize editing upstream skill files or writing personal agent-log reflections.
 
 ## Ownership and evidence
 
