@@ -139,8 +139,23 @@ export function createMockPortalClient(options: { store?: MockStore } = {}): Por
     },
 
     onSessionChange(cb) {
-      const listener = (s: SessionState) => cb(s);
+      // Like supabase-js's INITIAL_SESSION: deliver the current state once, asynchronously,
+      // then every change. Consecutive identical states are delivered only once.
+      let last: SessionState | null = null;
+      const listener = (s: SessionState) => {
+        if (last !== null && last.signedIn === s.signedIn && last.playerId === s.playerId) return;
+        last = s;
+        cb(s);
+      };
       listeners.add(listener);
+      queueMicrotask(() => {
+        if (!listeners.has(listener)) return;
+        try {
+          listener(sessionState());
+        } catch {
+          // A faulty subscriber must not break the client.
+        }
+      });
       return () => {
         listeners.delete(listener);
       };
@@ -190,7 +205,8 @@ export function createMockPortalClient(options: { store?: MockStore } = {}): Por
       }
       const name = validateDisplayName(displayName);
       if (!name.ok) return failWith(name.error);
-      return ok({ available: !nameTaken(store, name.value, null) });
+      // Like check_display_name: the caller's own name (any case) counts as available.
+      return ok({ available: !nameTaken(store, name.value, currentId) });
     },
   };
 }

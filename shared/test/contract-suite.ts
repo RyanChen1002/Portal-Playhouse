@@ -1,7 +1,8 @@
 // Shared contract suite: one set of expectations for every PortalClient implementation.
-// Runs against the in-memory mock (mock.contract.test.ts) and, later, against the real
-// Supabase-backed client on a persistent local database. Every name and email is therefore
-// built from the factory's uniqueness helpers so reruns never collide.
+// Runs against the in-memory mock (mock.contract.test.ts) and against the real
+// Supabase-backed client on a persistent local database (real.contract.integration.test.ts).
+// Every name and email is therefore built from the factory's uniqueness helpers so reruns
+// never collide.
 import { describe, expect, it } from 'vitest';
 import type {
   AppError,
@@ -74,7 +75,21 @@ async function waitFor(predicate: () => boolean, what: string, timeoutMs = WAIT_
 }
 
 export function describeClientContract(label: string, factory: ContractFactory): void {
-  async function signedUpPlayer(displayName = factory.uniqueName()) {
+  // Guard the factory itself: a token that breaks these rules would make some cases
+  // pass or fail for the wrong reason (for example, an all-uppercase token is its own
+  // "other case"), so fail loudly instead.
+  function uniqueName(): string {
+    const token = factory.uniqueName();
+    expect(typeof token, 'factory.uniqueName() must return a string').toBe('string');
+    expect(token, `factory token ${JSON.stringify(token)} must contain a lowercase letter`).not.toBe(
+      token.toUpperCase(),
+    );
+    expect(/^[\x00-\x7F]+$/.test(token), `factory token ${JSON.stringify(token)} must be ASCII`).toBe(true);
+    expect(cp(token), `factory token ${JSON.stringify(token)} must be at most 12 code points`).toBeLessThanOrEqual(12);
+    return token;
+  }
+
+  async function signedUpPlayer(displayName = uniqueName()) {
     const client = await factory.newClient();
     const email = factory.uniqueEmail();
     const profile = expectOk(await client.signUp({ email, password: TEST_PASSWORD, displayName }));
@@ -84,7 +99,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
   describe(`PortalClient contract: ${label}`, { timeout: TEST_TIMEOUT_MS }, () => {
     describe('sign up and sign in', () => {
       it('signUp returns profile with normalized name and avatar-01, winsTotal 0', async () => {
-        const token = factory.uniqueName();
+        const token = uniqueName();
         const { profile } = await signedUpPlayer(`  ${token}   X  `);
         expectProfile(profile, { displayName: `${token} X`, avatarId: 'avatar-01' });
       });
@@ -106,7 +121,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
       });
 
       it('signUp with taken name (other case) -> DISPLAY_NAME_TAKEN', async () => {
-        const token = factory.uniqueName();
+        const token = uniqueName();
         await signedUpPlayer(token);
         const b = await factory.newClient();
         const r = await b.signUp({
@@ -121,7 +136,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
       it('signUp with existing email -> EMAIL_TAKEN', async () => {
         const { email } = await signedUpPlayer();
         const b = await factory.newClient();
-        const r = await b.signUp({ email, password: TEST_PASSWORD, displayName: factory.uniqueName() });
+        const r = await b.signUp({ email, password: TEST_PASSWORD, displayName: uniqueName() });
         expectError(r, 'EMAIL_TAKEN', 'email');
       });
 
@@ -143,7 +158,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
         const r = await client.signUp({
           email: factory.uniqueEmail(),
           password: 'short7!',
-          displayName: factory.uniqueName(),
+          displayName: uniqueName(),
         });
         expectError(r, 'WEAK_PASSWORD', 'password');
       });
@@ -153,7 +168,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
         const r = await client.signUp({
           email: 'not-an-email',
           password: TEST_PASSWORD,
-          displayName: factory.uniqueName(),
+          displayName: uniqueName(),
         });
         expectError(r, 'VALIDATION_ERROR', 'email');
       });
@@ -176,7 +191,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
 
         const email = factory.uniqueEmail();
         const profile = expectOk(
-          await client.signUp({ email, password: TEST_PASSWORD, displayName: factory.uniqueName() }),
+          await client.signUp({ email, password: TEST_PASSWORD, displayName: uniqueName() }),
         );
         expect(expectOk(await client.getSession())).toEqual({ signedIn: true, playerId: profile.id });
         await waitFor(
@@ -201,6 +216,30 @@ export function describeClientContract(label: string, factory: ContractFactory):
         expect(seen.length).toBe(afterUnsubscribe);
       });
 
+      it('onSessionChange delivers the current (signed-out) state once after subscribing', async () => {
+        const client = await factory.newClient();
+        const seen: SessionState[] = [];
+        const unsubscribe = client.onSessionChange((s) => seen.push(s));
+        expect(seen).toEqual([]); // asynchronous, never during the subscribe call
+        await waitFor(() => seen.length > 0, 'initial session event');
+        expect(seen[0]).toEqual({ signedIn: false, playerId: null });
+        await sleep(QUIET_PERIOD_MS);
+        expect(seen).toEqual([{ signedIn: false, playerId: null }]);
+        unsubscribe();
+      });
+
+      it('onSessionChange delivers the current (signed-in) state once after subscribing', async () => {
+        const { client, profile } = await signedUpPlayer();
+        const seen: SessionState[] = [];
+        const unsubscribe = client.onSessionChange((s) => seen.push(s));
+        expect(seen).toEqual([]);
+        await waitFor(() => seen.length > 0, 'initial session event');
+        expect(seen[0]).toEqual({ signedIn: true, playerId: profile.id });
+        await sleep(QUIET_PERIOD_MS);
+        expect(seen).toEqual([{ signedIn: true, playerId: profile.id }]);
+        unsubscribe();
+      });
+
       it('getMe/updateMe while signed out -> UNAUTHORIZED', async () => {
         const fresh = await factory.newClient();
         expectError(await fresh.getMe(), 'UNAUTHORIZED');
@@ -209,7 +248,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
         const { client } = await signedUpPlayer();
         expectOk(await client.signOut());
         expectError(await client.getMe(), 'UNAUTHORIZED');
-        expectError(await client.updateMe({ displayName: factory.uniqueName() }), 'UNAUTHORIZED');
+        expectError(await client.updateMe({ displayName: uniqueName() }), 'UNAUTHORIZED');
       });
 
       it('each client holds its own session', async () => {
@@ -226,6 +265,26 @@ export function describeClientContract(label: string, factory: ContractFactory):
         const { client, profile } = await signedUpPlayer();
         expectError(await client.updateMe({}), 'VALIDATION_ERROR');
         expect(expectOk(await client.getMe())).toEqual(profile);
+      });
+
+      it('updateMe({displayName: null}) -> VALIDATION_ERROR on displayName, profile unchanged', async () => {
+        const { client, profile } = await signedUpPlayer();
+        const r = await client.updateMe({ displayName: null } as unknown as { displayName: string });
+        expectError(r, 'VALIDATION_ERROR', 'displayName');
+        expect(expectOk(await client.getMe())).toEqual(profile);
+      });
+
+      it('updateMe({avatarId: null}) -> VALIDATION_ERROR on avatarId, profile unchanged', async () => {
+        const { client, profile } = await signedUpPlayer();
+        const r = await client.updateMe({ avatarId: null } as unknown as { avatarId: AvatarId });
+        expectError(r, 'VALIDATION_ERROR', 'avatarId');
+        expect(expectOk(await client.getMe())).toEqual(profile);
+      });
+
+      it('updateMe with an explicitly undefined field leaves that field unchanged', async () => {
+        const { client, profile } = await signedUpPlayer();
+        const updated = expectOk(await client.updateMe({ displayName: undefined, avatarId: 'avatar-05' }));
+        expectProfile(updated, { displayName: profile.displayName, avatarId: 'avatar-05' });
       });
 
       it("updateMe({avatarId:'avatar-21'}) -> VALIDATION_ERROR on avatarId", async () => {
@@ -249,7 +308,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
 
       it('valid name with invalid avatar -> VALIDATION_ERROR on avatarId, nothing changed', async () => {
         const { client, profile } = await signedUpPlayer();
-        const r = await client.updateMe({ displayName: factory.uniqueName(), avatarId: 'avatar-21' as AvatarId });
+        const r = await client.updateMe({ displayName: uniqueName(), avatarId: 'avatar-21' as AvatarId });
         expectError(r, 'VALIDATION_ERROR', 'avatarId');
         expect(expectOk(await client.getMe())).toEqual(profile);
       });
@@ -263,7 +322,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
       });
 
       it('updateMe own name with different case succeeds', async () => {
-        const token = factory.uniqueName();
+        const token = uniqueName();
         const { client, profile } = await signedUpPlayer(token);
         const updated = expectOk(await client.updateMe({ displayName: token.toUpperCase() }));
         expectProfile(updated, { displayName: token.toUpperCase(), avatarId: profile.avatarId });
@@ -272,7 +331,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
       });
 
       it('updateMe name owned by another player -> DISPLAY_NAME_TAKEN, profile unchanged', async () => {
-        const token = factory.uniqueName();
+        const token = uniqueName();
         await signedUpPlayer(token);
         const b = await signedUpPlayer();
         const r = await b.client.updateMe({ displayName: token.toUpperCase(), avatarId: 'avatar-07' });
@@ -283,14 +342,15 @@ export function describeClientContract(label: string, factory: ContractFactory):
 
     describe('checkDisplayName', () => {
       it('available / taken / invalid', async () => {
-        const token = factory.uniqueName();
+        const token = uniqueName();
         const { client } = await signedUpPlayer(token);
         const other = await factory.newClient(); // signed out: still allowed
 
-        expect(expectOk(await other.checkDisplayName(factory.uniqueName()))).toEqual({ available: true });
+        expect(expectOk(await other.checkDisplayName(uniqueName()))).toEqual({ available: true });
         expect(expectOk(await other.checkDisplayName(token))).toEqual({ available: false });
         expect(expectOk(await other.checkDisplayName(`  ${token.toUpperCase()}  `))).toEqual({ available: false });
-        expect(expectOk(await client.checkDisplayName(token))).toEqual({ available: false });
+        // The owner may keep or re-case their own name, so it is available to them.
+        expect(expectOk(await client.checkDisplayName(token.toUpperCase()))).toEqual({ available: true });
         expectError(await other.checkDisplayName('   '), 'VALIDATION_ERROR', 'displayName');
         expectError(await other.checkDisplayName(SMILE.repeat(25)), 'VALIDATION_ERROR', 'displayName');
       });
@@ -319,7 +379,7 @@ export function describeClientContract(label: string, factory: ContractFactory):
       for (const c of cases) {
         it(c.label, async () => {
           const { client, profile } = await signedUpPlayer();
-          const token = factory.uniqueName();
+          const token = uniqueName();
           const input = c.build(token);
           const r = await client.updateMe({ displayName: input });
           if ('invalid' in c) {
