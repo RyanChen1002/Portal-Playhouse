@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { createTestAccounts } from './create-test-accounts';
 import { assertLocalUrl, getLocalSupabaseEnv } from './local-env';
 
-describe('createTestAccounts (local stack)', () => {
+// getLocalSupabaseEnv() shells out to `npx supabase status`, which alone can take seconds.
+describe('createTestAccounts (local stack)', { timeout: 20_000 }, () => {
   it('creates accounts that can sign in and have matching profiles', async () => {
     const env = await getLocalSupabaseEnv();
     const accounts = await createTestAccounts(3, env);
