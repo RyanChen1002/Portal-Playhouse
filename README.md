@@ -4,7 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.1 | 11/14/2026 | Added the Local development section and hosted checklist link, and updated Project status for the backend foundation. |
+| 0.1 | 11/14/2026 | Added the Local development section and hosted checklist link, and updated Project status to describe the added backend foundation and point to the hosted setup checklist. |
 
 A browser-based multiplayer 3D world where players explore connected rooms and play cooperative mini-games.
 
@@ -15,7 +15,7 @@ A browser-based multiplayer 3D world where players explore connected rooms and p
 
 ## Project status
 
-Planning and documentation stage. Ryan and Adam have approved the initial spec and component contract. Open decisions remain documented in those files. The backend foundation (local Supabase stack, profiles, shared client and mock) is in progress on a feature branch, pending review. Frontend code and deployed URLs will be added as development begins.
+Planning and documentation stage. Ryan and Adam have approved the initial spec and component contract. Open decisions remain documented in those files. The backend foundation has been added: the local Supabase stack, the profile schema and functions, the shared client and mock, and their tests and CI. Hosted dev project setup follows the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md). Frontend code and deployed URLs will be added as development begins.
 
 ## Local development
 

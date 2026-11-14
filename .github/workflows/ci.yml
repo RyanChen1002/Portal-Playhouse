@@ -13,6 +13,8 @@ concurrency:
 
 env:
   # Services the tests do not use. Skipping them keeps the image pull small.
+  # The tests need only db, auth, rest and kong, which are not in this list. A future test
+  # that needs realtime or storage must remove that service (realtime, storage-api) from it.
   SUPABASE_EXCLUDE: studio,storage-api,imgproxy,edge-runtime,logflare,vector,mailpit,realtime,postgres-meta,supavisor
 
 jobs:
