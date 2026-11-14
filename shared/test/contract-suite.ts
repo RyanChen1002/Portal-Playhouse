@@ -163,6 +163,27 @@ export function describeClientContract(label: string, factory: ContractFactory):
         expectError(r, 'WEAK_PASSWORD', 'password');
       });
 
+      it('signUp with a password over 72 bytes -> WEAK_PASSWORD, no account created', async () => {
+        const client = await factory.newClient();
+        const email = factory.uniqueEmail();
+        const r = await client.signUp({ email, password: 'a'.repeat(80), displayName: uniqueName() });
+        expectError(r, 'WEAK_PASSWORD', 'password');
+        expect(expectOk(await client.getSession())).toEqual({ signedIn: false, playerId: null });
+        expectError(await client.signIn({ email, password: TEST_PASSWORD }), 'INVALID_CREDENTIALS');
+      });
+
+      it('signUp while signed in counts the caller\'s own name as taken and ends the session', async () => {
+        const token = uniqueName();
+        const { client } = await signedUpPlayer(token);
+        const r = await client.signUp({
+          email: factory.uniqueEmail(),
+          password: TEST_PASSWORD,
+          displayName: token.toUpperCase(),
+        });
+        expectError(r, 'DISPLAY_NAME_TAKEN', 'displayName');
+        expect(expectOk(await client.getSession())).toEqual({ signedIn: false, playerId: null });
+      });
+
       it('signUp bad email -> VALIDATION_ERROR', async () => {
         const client = await factory.newClient();
         const r = await client.signUp({

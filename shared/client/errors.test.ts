@@ -100,9 +100,32 @@ describe('mapAuthError', () => {
     expectMapped(mapAuthError({ status: 429 }), 'RATE_LIMITED');
   });
 
-  it('validation_failed / email_address_invalid -> VALIDATION_ERROR on email', () => {
-    expectMapped(mapAuthError({ code: 'validation_failed', status: 400 }), 'VALIDATION_ERROR', 'email');
+  it('email_address_invalid -> VALIDATION_ERROR on email', () => {
     expectMapped(mapAuthError({ code: 'email_address_invalid', status: 400 }), 'VALIDATION_ERROR', 'email');
+  });
+
+  it('validation_failed with no message -> VALIDATION_ERROR with no field', () => {
+    expectMapped(mapAuthError({ code: 'validation_failed', status: 400 }), 'VALIDATION_ERROR');
+    expectMapped(
+      mapAuthError({ code: 'validation_failed', status: 400, message: 'Something else went wrong' }),
+      'VALIDATION_ERROR',
+    );
+  });
+
+  it('validation_failed mentioning email -> VALIDATION_ERROR on email', () => {
+    expectMapped(
+      mapAuthError({ code: 'validation_failed', status: 400, message: 'Unable to validate email address: invalid format' }),
+      'VALIDATION_ERROR',
+      'email',
+    );
+  });
+
+  it('validation_failed mentioning password (e.g. over 72 bytes) -> WEAK_PASSWORD on password', () => {
+    expectMapped(
+      mapAuthError({ code: 'validation_failed', status: 422, message: 'Password cannot be longer than 72 characters' }),
+      'WEAK_PASSWORD',
+      'password',
+    );
   });
 
   it('AuthRetryableFetchError or status 0 -> SERVICE_UNAVAILABLE', () => {

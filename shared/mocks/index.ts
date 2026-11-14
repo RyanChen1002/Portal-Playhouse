@@ -87,6 +87,8 @@ export function createMockPortalClient(options: { store?: MockStore } = {}): Por
 
   return {
     async signUp(input) {
+      // Sign-up always starts signed out, like the real client.
+      if (currentId !== null) setSession(null);
       const { email, password, displayName } = input ?? ({} as typeof input);
       if (typeof email !== 'string' || typeof password !== 'string') {
         return fail('VALIDATION_ERROR', 'Please enter a valid email address.', 'email');
@@ -145,7 +147,7 @@ export function createMockPortalClient(options: { store?: MockStore } = {}): Por
       const listener = (s: SessionState) => {
         if (last !== null && last.signedIn === s.signedIn && last.playerId === s.playerId) return;
         last = s;
-        cb(s);
+        cb({ ...s }); // a copy, like the real client
       };
       listeners.add(listener);
       queueMicrotask(() => {

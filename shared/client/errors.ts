@@ -16,6 +16,7 @@ export interface AuthErrorLike {
   code?: string;
   status?: number;
   name?: string;
+  message?: string;
 }
 
 /** Plain-language fallback text per code. Never the bare code. */
@@ -76,9 +77,18 @@ export function mapAuthError(err: AuthErrorLike | null | undefined): AppError {
     case 'over_request_rate_limit':
     case 'over_email_send_rate_limit':
       return appError('RATE_LIMITED');
-    case 'validation_failed':
     case 'email_address_invalid':
       return appError('VALIDATION_ERROR', 'email', 'Please enter a valid email address.');
+    case 'validation_failed': {
+      // GoTrue uses validation_failed for several inputs (for example, a password over 72
+      // bytes), so only name a field when the message says which one.
+      const text = typeof err.message === 'string' ? err.message.toLowerCase() : '';
+      if (text.includes('email')) {
+        return appError('VALIDATION_ERROR', 'email', 'Please enter a valid email address.');
+      }
+      if (text.includes('password')) return appError('WEAK_PASSWORD', 'password');
+      return appError('VALIDATION_ERROR');
+    }
   }
   if (err.status === 429) return appError('RATE_LIMITED');
   // AuthRetryableFetchError / status 0 (network failure) and anything else.

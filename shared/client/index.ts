@@ -96,6 +96,11 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
     return ok(data?.session ?? null);
   }
 
+  // Note on `{ ...error, status }` below: this relies on supabase-js returning plain
+  // PostgrestError objects on the non-throwing path, so spreading keeps message, code, hint
+  // and details. If `throwOnError()` were ever used, errors would be thrown Error instances
+  // (message is not an own enumerable property) and these call sites would need to change.
+
   async function getMe(): Promise<Result<Profile>> {
     const session = await currentSession();
     if (session.error) return failWith(session.error);
@@ -109,6 +114,15 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
   return {
     signUp: (input) =>
       guard(async () => {
+        // Sign-up always starts signed out, like the mock: end any current session on this
+        // client only, so the pre-check runs as anon and the caller's own name counts as taken.
+        const existing = await currentSession();
+        if (existing.error) return failWith(existing.error);
+        if (existing.data) {
+          const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
+          if (signOutError) return failWith(mapAuthError(signOutError));
+        }
+
         const { email, password, displayName } = (input ?? {}) as {
           email?: unknown;
           password?: unknown;
@@ -136,11 +150,15 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
           password,
           options: { data: { display_name: name.value } },
         });
+        // Local Supabase answers an existing email with a 422 'user_already_exists' error,
+        // which mapAuthError turns into EMAIL_TAKEN.
         if (error) return failWith(mapAuthError(error));
-        // Local Supabase answers an existing email with a 422 'user_already_exists' error. If it
-        // instead returns an obfuscated user (no session, or no identities), treat it the same.
-        if (!data.session || (Array.isArray(data.user?.identities) && data.user.identities.length === 0)) {
-          return fail('EMAIL_TAKEN', 'email');
+        if (!data.session) {
+          // Supabase's obfuscated existing-email response: a user with no identities.
+          if (Array.isArray(data.user?.identities) && data.user.identities.length === 0) {
+            return fail('EMAIL_TAKEN', 'email');
+          }
+          return fail('SERVICE_UNAVAILABLE', undefined, 'Sign-up did not return a session. Please try again later.');
         }
         return getMe();
       }),
