@@ -43,6 +43,23 @@ describe('display name', () => {
     expectInvalid('a\u0007b');
   });
 
+  it('handles characters in both W and D (pinned identically in SQL)', () => {
+    expect(normalizeDisplayName('\u0085a\u0085b ')).toBe('a b');
+    expect(validateDisplayName('\u0085a\u0085b ')).toEqual({ ok: true, value: 'a b' });
+    expect(normalizeDisplayName('a\u0085b')).toBe('a b');
+    expect(validateDisplayName('a\u0085b')).toEqual({ ok: true, value: 'a b' });
+    expect(normalizeDisplayName('a\u00A0b')).toBe('a b');
+    expect(validateDisplayName('a\u00A0b')).toEqual({ ok: true, value: 'a b' });
+  });
+
+  it('rejects boundary characters of D when internal', () => {
+    expectInvalid('a\u00ADb');
+    expectInvalid('a\u061Cb');
+    expectInvalid('a\u180Eb');
+    expectInvalid('a\u2060b');
+    expectInvalid('a\uFFF9b');
+  });
+
   it('allows visible unicode', () => {
     expect(validateDisplayName('Zo\u00EB').ok).toBe(true);
     expect(validateDisplayName('\u5C71\u7530').ok).toBe(true);
