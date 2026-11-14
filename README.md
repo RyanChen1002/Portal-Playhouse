@@ -1,5 +1,11 @@
 # Portal Playhouse
 
+## Change History
+
+| Version | Date | Change |
+| --- | --- | --- |
+| 0.1 | 11/14/2026 | Added the Local development section and hosted checklist link, and updated Project status for the backend foundation. |
+
 A browser-based multiplayer 3D world where players explore connected rooms and play cooperative mini-games.
 
 ## Team
@@ -9,7 +15,28 @@ A browser-based multiplayer 3D world where players explore connected rooms and p
 
 ## Project status
 
-Planning and documentation stage. Ryan and Adam have approved the initial spec and component contract. Open decisions remain documented in those files. Application code, local run instructions, and deployed URLs will be added as development begins.
+Planning and documentation stage. Ryan and Adam have approved the initial spec and component contract. Open decisions remain documented in those files. The backend foundation (local Supabase stack, profiles, shared client and mock) is in progress on a feature branch, pending review. Frontend code and deployed URLs will be added as development begins.
+
+## Local development
+
+Prerequisites:
+
+- Docker Desktop, running.
+- Node 22 via [nvm](https://github.com/nvm-sh/nvm): run `nvm use` in the repository (it reads `.nvmrc`).
+- At least about 10 GB of free disk space for the Supabase images. A full disk can corrupt an image pull.
+
+Commands:
+
+```sh
+npm ci                     # install pinned dependencies
+npx supabase start         # start the local stack (first run pulls images)
+npm run typecheck          # type check
+npm test                   # unit and contract tests
+npm run test:db            # database tests (pgTAP)
+npm run test:integration   # integration tests against the local stack
+```
+
+Stop the stack with `npx supabase stop`. All tests and scripts target the local stack only. The manual steps for the hosted projects are in the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md).
 
 ## Planned first release
 
@@ -35,6 +62,7 @@ These are selected services, not a claim that deployment is configured. The fron
 - [Initial spec](doc/initial-spec.md)
 - [Component contract](doc/component-contract.md)
 - [Future features](doc/future-features.md)
+- [Hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md)
 - [Shared agent instructions](AGENTS.md)
 - [Superpowers source and setup](.agents/SUPERPOWERS.md)
 - [Ryan's AI agent logs](agent-logs/ryan/README.md)
