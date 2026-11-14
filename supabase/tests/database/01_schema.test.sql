@@ -53,6 +53,13 @@ insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a2', 'a2@example.test'),
   ('00000000-0000-0000-0000-0000000000a3', 'a3@example.test');
 
+-- The sign-up trigger (Task 4) already created profiles for these users; remove them so
+-- the constraint tests below start from a clean slate.
+delete from private.profiles where id in (
+  '00000000-0000-0000-0000-0000000000a1',
+  '00000000-0000-0000-0000-0000000000a2',
+  '00000000-0000-0000-0000-0000000000a3');
+
 select lives_ok(
   $$insert into private.profiles (id, display_name) values ('00000000-0000-0000-0000-0000000000a1', 'Alex')$$,
   'insert profile with default avatar');
