@@ -1,6 +1,6 @@
 # Research: Authoritative Runtime and Real-Time Transport
 
-**Version:** 0.1
+**Version:** 0.2
 
 **Date:** 11/15/2026
 
@@ -12,7 +12,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.1 | 11/15/2026 | Added the runtime and transport research: three options, four load scenarios, free-tier budgets, and a proposed recommendation. |
+| 0.2 | 11/15/2026 | Added §3.1 and notes in §6 and §7 for the move toward free-roaming 3D movement, which strengthens the Durable Objects recommendation. Added a note on an 8-player cap. Earlier 0.1 entry: initial research with three options, four load scenarios, free-tier budgets, and a proposed recommendation. |
 
 ## 1. Question
 
@@ -47,6 +47,15 @@ What each scenario demands, beyond message volume:
 - **S2** needs a **server-side timer**: the floor changes whether or not anyone acts, and a player standing on a tile when it turns unsafe must be caught at that moment.
 - **S3** needs timing plus geometry. Targets can follow a path fixed in advance (a function of time), so a throw can be judged from its position, direction, and timestamp without simulating every frame.
 - **S4** tests whether rooms are isolated: a busy lobby must not starve a game room.
+
+### 3.1 Update: free-roaming 3D movement
+
+The team is leaning toward 3D, free-roaming movement (11/15/2026), so the grid assumption above is optimistic. Free roaming means about 10–20 position or input messages per second per moving player, roughly 3–5 times the grid rate. §6 shows the effect: it makes Supabase-only impractical and narrows, but does not remove, the Durable Objects headroom. Two design choices keep the load down:
+
+- **Clients send inputs, not positions.** "Started moving in direction X" and "stopped" are sent on change; the server simulates between them and broadcasts snapshots. This cuts incoming traffic about 10 times, and the contract's `player.move {sequence, input}` already has this shape.
+- **Light server checks.** Speed caps, world bounds, and simple hit tests are enough. No server physics engine is needed.
+
+Free roaming also adds client-side prediction and interpolation, which is frontend work for Ryan.
 
 ## 4. Platform facts
 
@@ -139,6 +148,10 @@ Reading this table:
 - The **monthly quota is shared by dev and production** and is measured in hours of full-world play: roughly 7 hours per month for S4 even after batching. Testing, class access for 1–2 weeks, and the presentation all draw from it. A 10-minute 16-client load test on the hosted project uses a noticeable share.
 - S2's floor timer has to be driven by a 1-second `pg_cron` job or evaluated lazily. Both work; neither is precise.
 
+**With free-roaming 3D movement (§3.1) and peer-style broadcast, Option A fails even for small lobbies:** 8 players moving at 10 Hz generate 640 events per second at peak (160 with 25% moving) against the limit of 100. Batching is the only fix, and `pg_cron` cannot tick faster than once per second, so other players would update once per second. That is cheap (about 9 events per second for 8 players, roughly 60 hours per month) but poor for 3D movement, and timed games would be judged at 1-second precision.
+
+**An 8-player cap would not change this conclusion.** Fan-out grows with the square of the player count, so 8 players is about 4 times less load than 16, which fits only the grid-average case. It would also change a confirmed requirement (FR-03, AC-02). Durable Objects stay comfortable at either size.
+
 ### 6.2 Cloudflare Durable Objects (Option B)
 
 Billed requests = incoming messages ÷ 20; outgoing messages are free. Limits reset **daily**.
@@ -150,7 +163,18 @@ Billed requests = incoming messages ÷ 20; outgoing messages are free. Limits re
 | S3: two-player co-op | 8 / 10 | 69 / 55 | 28 |
 | S4: three rooms | 30 / 66 | 18 / 8.4 | 9.4 (three objects awake) |
 
-Every scenario fits with hours to spare **each day**, including the worst case of all 16 players walking continuously. The allowance is per account, so dev and production share it unless they use separate accounts.
+Under the **grid assumption**, every scenario fits with hours to spare **each day**. The allowance is per account, so dev and production share it unless they use separate accounts.
+
+**With free-roaming 3D movement (§3.1)**, the incoming-message limit becomes the binding one. Estimates for the 16-player lobby, with clients streaming position at the given rate:
+
+| Players moving, rate | Incoming messages/s | Hours per day before the free limit |
+| --- | --- | --- |
+| All 16, 10 Hz | 160 | 3.5 |
+| All 16, 20 Hz | 320 | 1.7 |
+| 25% (4), 10 Hz | 40 | 13.9 |
+| 25% (4), 20 Hz | 80 | 6.9 |
+
+It still fits, with less margin, and sending inputs on change instead of streaming positions restores most of it. Other limits are unaffected: outgoing fan-out stays free, 320 incoming messages per second is under the 1,000 per second soft limit per object, and a 20 Hz tick for 16 players is light CPU. If the daily limit ever binds, the paid Workers plan lifts it, but that is a cost needing team agreement and its price is not verified here.
 
 ### 6.3 Node.js server (Option C)
 
@@ -191,6 +215,8 @@ To keep the fallback cheap, **write room and game rules as plain TypeScript with
 
 If the team prefers the conventional game-server experience over free-tier headroom, Option C on Northflank is workable. If the team prefers no new vendor, Option A is workable only by accepting a once-per-second lobby and a monthly play budget measured in hours.
 
+**Free-roaming 3D movement strengthens this recommendation.** It needs a real server timer (about 20 Hz) and high-rate messages, which Durable Objects and a Node server provide and Supabase does not. Durable Objects' headroom narrows (§6.2) but remains workable, while Option A degrades to once-per-second updates.
+
 A staged path (Option A for the 2-player milestone, then a game server for 16) is not recommended: rules written in PL/pgSQL would be rewritten in TypeScript.
 
 ## 8. Decisions needed from Ryan and Adam
@@ -198,7 +224,7 @@ A staged path (Option A for the 2-player milestone, then a game server for 16) i
 1. Runtime: A, B, or C (recommend B, with C as fallback).
 2. Whether to open a Cloudflare account, who owns it, and whether dev and production share one account's daily allowance.
 3. Whether the room board uses Supabase Realtime (hybrid) or the game runtime's own connection.
-4. Movement model for the lobby: one message per grid step, or destinations with client animation. This changes message volume about tenfold and is partly a frontend decision.
+4. Movement model: the team is leaning toward free-roaming 3D (§3.1). Decide whether clients send inputs on change (recommended) or stream positions. This changes message volume about tenfold and is partly a frontend decision.
 5. Whether to adopt a room framework (Colyseus under C; PartyServer under B) or write the small amount of room code directly.
 
 ## 9. Items to verify before or during design
@@ -210,6 +236,8 @@ A short throwaway spike should confirm the recommended option before the design 
 - Northflank: free instance size, and whether the Sandbox terms still read as in §4.3.
 - Render: bandwidth allowance and card requirement on the free plan.
 - Measured latency from one player's action to another player's screen on the chosen option, from a home connection.
+
+- Measure incoming messages per second for 16 simulated 3D clients at 10 and 20 Hz, to confirm the §6.2 estimates.
 
 The message rates in §3 are assumptions. Replace them with measurements once movement exists.
 
