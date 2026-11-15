@@ -6,7 +6,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.1 | 11/14/2026 | Created the manual checklist for the hosted dev project and the production launch. Added project-creation choices (Data API on with the `public` schema, automatic RLS off) and dashboard locations for the auth, signing-key, and Data API steps. Expanded the migration step (when and from which branch, where to run the commands, one-time link, dry run, and verification) and added guidance for the local env file for the hosted dev project. |
+| 0.1 | 11/14/2026 | Created the manual checklist for the hosted dev project and the production launch. Added project-creation choices (Data API on with the `public` schema, automatic RLS off) and dashboard locations for the auth, signing-key, and Data API steps. Expanded the migration step (when and from which branch, where to run the commands, one-time link, dry run, and verification) and added guidance for the local env file for the hosted dev project. Recorded the four hosted advisor lints confirmed on the dev project and when to accept them. Expanded the smoke check (real client against hosted dev, a runnable command, expected output, cleanup) and the auth-settings comparison (a table mapping each `config.toml` key to its dashboard setting). Recorded that the hosted dev smoke check passed and the auth settings match. |
 
 These are manual steps for Adam. Agents do not perform them and never run a command with `--remote`. The design is in [section 5.1 of the backend spec](../specs/2026-11-11-backend-foundation-auth-profiles-design.md). The settings below must match `supabase/config.toml`.
 
@@ -94,19 +94,94 @@ Supabase moves and renames dashboard menus from time to time. The locations belo
     4. `npx supabase migration list --remote` again. Local and remote should now match.
   - All commands without `--remote` target the **local** stack. Only these manual steps use `--remote`, and only for the dev project. Never run them against production outside the authorized launch process.
 - [ ] 6. Run the hosted advisors: `npx supabase db advisors --remote` (also check the Advisors page in the dashboard). Then handle the findings:
-  - The hosted linter may flag the three intended SECURITY DEFINER functions. The lint names are believed to be `anon_security_definer_function_executable` and `authenticated_security_definer_function_executable`, but this is unconfirmed.
-  - Record the **actual** lint names from the hosted output here: `<lint names, to be filled in by Adam>`.
-  - Accept them **only** for `public.get_me`, `public.update_me` and `public.check_display_name`. Any other finding, or the same lint on any other function, is a problem to fix before merging.
+  - The output's first line names the target, for example `Target: project Portal-Playhouse-Dev (<project-ref>) · production`. The word `production` is Supabase's label for a project's main database, not a branch. Check the project name: it must be the dev project.
+  - The hosted linter flags the three intended SECURITY DEFINER functions with these WARN lints, confirmed on the dev project on 11/14/2026:
+
+    | Lint | Function | Why it is accepted |
+    | --- | --- | --- |
+    | `anon_security_definer_function_executable` (0028) | `public.check_display_name(text)` | The sign-up form checks name availability before the player has an account. |
+    | `authenticated_security_definer_function_executable` (0029) | `public.check_display_name(text)` | Signed-in players check a new name before renaming. |
+    | `authenticated_security_definer_function_executable` (0029) | `public.get_me()` | Signed-in players read their own profile. |
+    | `authenticated_security_definer_function_executable` (0029) | `public.update_me(text, text)` | Signed-in players update their own profile. |
+
+  - Accept exactly these four findings. Any other finding is a problem to fix before merging, including the same lint on another function, or `anon` on `get_me` or `update_me`.
   - The local `rls_enabled_no_policy` INFO findings for `private.avatars` and `private.profiles` are intended: those tables are private by design.
-- [ ] 7. Smoke check:
-  - Sign up.
-  - Sign in.
-  - `getMe`.
-  - `updateMe` with a new avatar.
-  - Try a display name that is already taken (expect `DISPLAY_NAME_TAKEN`).
-  - Sign out.
-  - Sign in again.
-- [ ] 8. Record the date and that the hosted auth settings match `config.toml`: `<MM/DD/YYYY, initials>`.
+- [ ] 7. Smoke check. Run it after step 5, against the hosted dev project.
+  - **Use the real client, not the mock.** The mock (`shared/mocks`) runs in memory and never contacts Supabase, so it can't show that the hosted project works. The automated tests and `scripts/` refuse non-local URLs, so they can't do it either. The command below runs the real shared client (`shared/client`) with the values from `.env.development.local`.
+  - **Where to run:** at the repository root, on the same branch as step 5, with Node 22 (`nvm use`). Docker is not needed.
+  - **Email address:** replace `you@your-domain` with an address you own. The script creates two users with plus-addresses (`you+a123456@your-domain`, `you+b123456@your-domain`). Confirm email is off, so no email is sent. Supabase may reject made-up domains such as `example.com`.
+  - Paste the whole block into the terminal. Nothing is written to disk.
+
+```sh
+SMOKE_EMAIL=you@your-domain npx tsx --env-file=.env.development.local <<'EOF'
+const { createPortalClient } = await import('./shared/client/index.ts');
+const url = process.env.SUPABASE_URL!, key = process.env.SUPABASE_PUBLISHABLE_KEY!;
+const [user, domain] = process.env.SMOKE_EMAIL!.split('@');
+const run = Date.now().toString().slice(-6);
+const a = { email: `${user}+a${run}@${domain}`, name: `SmokeA-${run}` };
+const b = { email: `${user}+b${run}@${domain}`, name: `SmokeB-${run}` };
+const password = `smoke-${run}-pass`;
+const c = createPortalClient({ url, publishableKey: key });
+let failed = 0;
+const check = (label: string, ok: boolean, info: unknown) => {
+  if (!ok) failed++;
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}`, ok ? '' : JSON.stringify(info));
+};
+console.log(`Target: ${new URL(url).host}   run: ${run}`);
+let r: any;
+r = await c.signUp({ email: a.email, password, displayName: a.name });
+check(`sign up player A (${a.name})`, r.data?.displayName === a.name, r);
+r = await c.signUp({ email: b.email, password, displayName: b.name });
+check(`sign up player B (${b.name})`, r.data?.displayName === b.name, r);
+await c.signOut();
+r = await c.signIn({ email: b.email, password });
+check('sign in as B', r.data?.displayName === b.name, r);
+r = await c.getMe();
+check('getMe returns B', r.data?.displayName === b.name && r.data?.winsTotal === 0, r);
+r = await c.updateMe({ avatarId: 'avatar-07' });
+check('updateMe avatar -> avatar-07', r.data?.avatarId === 'avatar-07', r);
+r = await c.checkDisplayName(a.name);
+check("checkDisplayName(A's name) -> not available", r.data?.available === false, r);
+r = await c.updateMe({ displayName: a.name });
+check("updateMe to A's name -> DISPLAY_NAME_TAKEN", r.error?.code === 'DISPLAY_NAME_TAKEN', r);
+r = await c.signOut();
+const s = await c.getSession();
+check('sign out', r.error === null && s.data?.signedIn === false, { r, s });
+r = await c.signIn({ email: b.email, password });
+check('sign in again; avatar kept', r.data?.avatarId === 'avatar-07', r);
+await c.signOut();
+console.log(failed === 0 ? 'SMOKE CHECK PASSED' : `SMOKE CHECK FAILED (${failed})`);
+console.log(`Test users to delete afterwards: ${a.email}, ${b.email}`);
+process.exit(failed === 0 ? 0 : 1);
+EOF
+```
+
+  - **Expected:**
+    - The `Target:` line shows your dev project's host (`<project-ref>.supabase.co`).
+    - Nine `PASS` lines follow, then `SMOKE CHECK PASSED`.
+    - A `FAIL` line prints the client's result, including the error `code`.
+  - **If it fails:**
+    - `SERVICE_UNAVAILABLE` on every step means the URL or key in `.env.development.local` is wrong, or the migrations weren't pushed (step 5).
+    - `RATE_LIMITED` means the hosted sign-up limits were hit. Wait a few minutes and run it again.
+  - **Clean up:** delete the two test users under **Authentication → Users** (select each user, then **Delete user**). Their profiles are deleted with them (`on delete cascade`).
+- [ ] 8. Check that the hosted auth settings match `config.toml`.
+  - The hosted settings live only in the dashboard. Open the pages from step 2 and compare each value with the `supabase/config.toml` line below. If a label isn't where expected, search for it with Cmd+K.
+
+    | `supabase/config.toml` | Value | Dashboard |
+    | --- | --- | --- |
+    | `[auth] enable_signup` | `true` | Authentication → Sign In / Providers: **Allow new users to sign up** on |
+    | `[auth] enable_anonymous_sign_ins` | `false` | Same page: **Allow anonymous sign-ins** off |
+    | `[auth.email] enable_confirmations` | `false` | Same page (or the Email provider panel): **Confirm email** off |
+    | `[auth.email] enabled` | `true` | Same page, provider list → **Email**: **Enable Email provider** on |
+    | `[auth] minimum_password_length` | `8` | Email provider panel, or Authentication → Attack Protection: **Minimum password length** 8 |
+    | `[auth] password_requirements` | `""` (none) | Same place: **Password requirements** at the default (no required characters) |
+    | `[auth.sms] enabled`, `[auth.external.*] enabled` | `false` | Provider list: every provider except Email disabled |
+
+  - **Don't compare these.** They differ on purpose:
+    - `[auth.rate_limit]`: the local values are raised for tests (see the warning above).
+    - `site_url` and `additional_redirect_urls`: these are local addresses, and the frontend sets the hosted ones later.
+  - **Don't use `npx supabase config push`** to sync the settings. It would copy every local auth setting to the hosted project, including the local-only rate limits.
+  - When everything matches, record it here: 11/14/2026, AL (hosted dev smoke check passed; auth settings match).
 - [ ] 9. Give Ryan the project URL and the publishable key. **Never** the secret key.
 
 ## Production project (at first launch)
