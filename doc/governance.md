@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | 11/13/2026 | Documented the original character direction selected by Ryan and license checks for future artwork. |
 | 0.1 | 11/11/2026 | Created the initial risk register and added the project MIT license. Added change history, a shorter risk table, and mitigation details while preserving ratings, owners, and statuses. Standardized dates to MM/DD/YYYY, combined same-day changes, aligned history columns, and removed the redundant last-updated header. |
 
 ## Purpose
@@ -31,6 +32,8 @@ Use database access controls, including row-level security, to protect emails an
 ### R2 — Track code licensing
 
 The project uses the [MIT license](../LICENSE). Retain required licenses and notices for third-party code; the project license does not replace those obligations.
+
+Character artwork uses the original procedural 3D roster selected by Ryan on 11/13/2026, documented in the [frontend roadmap](plans/2026-11-12-local-3d-preview.md#character-roster). Use original designs rather than recognizable franchise characters. Check licenses and retain required notices if third-party artwork is introduced.
 
 ### R3 — Limit account-creation abuse
 

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Portal Playhouse · Local preview</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+  <script type="module" src="world.js"></script>
+  <link rel="stylesheet" href="world.css">
+</head>
+<body>
+<section id="welcome" class="welcome-screen" aria-label="Welcome to Portal Playhouse">
+ <div class="welcome-art"><a class="welcome-logo" href="#">&#10022; PORTAL PLAYHOUSE</a><div class="floating-island"><div class="magic-arch"><span>&#10022;</span></div><div class="art-tree tree-a">&#9824;</div><div class="art-tree tree-b">&#9824;</div><div class="art-character">&#129418;</div><span class="spark spark-a">&#10023;</span><span class="spark spark-b">&#10022;</span><span class="spark spark-c">&#10023;</span></div><div class="welcome-copy"><p class="eyebrow">A WORLD WITH ROOM FOR YOU</p><h1>Small adventures.<br>Wonderful company.</h1><p>Find your people. Pick a portal.<br>Make a little magic together.</p></div><span class="art-foot">EXPLORE &middot; CONNECT &middot; PLAY</span></div>
+ <div class="welcome-form"><div id="login-step"><span class="welcome-label">YOUR NEXT ADVENTURE STARTS HERE</span><h2>Welcome to<br>the playhouse.</h2><p class="intro">A little world, made better with you in it.</p><form id="login-form"><label for="login-email">Email address</label><input id="login-email" type="email" autocomplete="off" value="explorer@example.test" required><label for="login-password">Password</label><input id="login-password" type="password" autocomplete="off" placeholder="Enter sample password" required><p id="login-error" class="error" role="alert"></p><button class="button primary" type="submit">Sign in to local demo <span>&#10022;</span></button></form><div class="or-line">or take a look around</div><button id="demo-enter" class="button secondary" type="button">Explore demo <span>&#10022;</span></button><p class="demo-disclosure">Local preview only. Use <strong>explorer@example.test</strong> and <strong>playhouse-demo</strong>. No account is created and nothing is sent or saved. Please don't enter a real password.</p><span class="welcome-bottom">20 characters. One shared adventure.</span></div>
+ <div id="character-step" hidden><p class="eyebrow">STEP INTO YOUR STORY</p><h2 id="character-title" tabindex="-1">Who will you be?</h2><p class="intro">20 original storybook characters. Choose your companion.</p><div id="welcome-avatars" class="character-grid" aria-label="Choose a character"></div><div class="selection-footer"><strong id="chosen-name">Ember Fox</strong><button id="enter-world" class="button primary">Enter the playhouse &#8599;</button></div><p class="demo-disclosure">Procedural 3D characters with original names and designs. Avatar selection can be changed inside.</p></div></div>
+ </section>
+  <aside class="sidebar" hidden>
+    <a class="brand" href="#lobby" aria-label="Portal Playhouse home"><span class="brand-icon">P</span><span>PORTAL<br>PLAYHOUSE<span class="brand-caption">A LITTLE WORLD. TOGETHER.</span></span></a>
+    <p class="nav-caption">YOUR PLAYHOUSE</p>
+    <nav aria-label="Main navigation">
+      <a href="#lobby" data-view="lobby"><span aria-hidden="true">⌂</span> The lobby</a>
+      <a href="#rooms" data-view="rooms"><span aria-hidden="true">▦</span> Room board</a>
+      <a href="#profile" data-view="profile"><span aria-hidden="true">☺</span> My character</a>
+      <a href="#history" data-view="history"><span aria-hidden="true">◷</span> My history</a>
+    </nav>
+    <button id="sign-out-demo" class="button secondary" type="button">Leave demo &#8599;</button><div class="sidebar-note"><span class="tiny-star">✦</span><h3>Better with a friend.</h3><p>Find a room. Team up.<br>Make a little progress together.</p></div>
+    <a href="#profile" class="player-card"><span class="avatar my-avatar" aria-hidden="true"></span><span><strong class="my-name">Explorer</strong><small>Local demo player</small></span><span aria-hidden="true">↗</span></a>
+  </aside>
+  <main hidden>
+    <header class="topbar"><span><span class="status-dot"></span> LOCAL PREVIEW <span class="topbar-divider">/</span> <span id="breadcrumb">The lobby</span></span><span class="demo-tag">Sample data · No server connected</span></header>
+    <section id="lobby" class="view" aria-labelledby="lobby-title">
+      <div class="page-heading"><div><p class="eyebrow">COME ON IN</p><h1 id="lobby-title">Welcome to the commons.</h1><p>Walk around, meet the sample characters, and find your next portal.</p></div><a class="button primary" href="#rooms">Find a room <span aria-hidden="true">↗</span></a></div>
+      <div class="lobby-layout">
+        <div class="world-card">
+          <div class="world-top"><span class="pill"><span class="status-dot"></span> The commons</span><span class="pill"><span class="world-count">6</span> / 16 players · sample</span></div>
+          <div id="world" class="world" tabindex="0" role="group" aria-label="Illustrated lobby preview. Use arrow keys or W A S D to move your character. Tab to leave.">
+            <div class="cloud cloud-one"></div><div class="cloud cloud-two"></div>
+            <div class="island"><div class="tiles"></div><div class="path"></div><div class="garden garden-one">✿</div><div class="garden garden-two">✿</div></div>
+            <div class="world-sign">THE COMMONS<span>meet here, go anywhere</span></div>
+            <button class="portal portal-one" data-room="fern" aria-label="Enter Fern room"><span class="portal-hole">✧</span><span class="portal-label">01 · FERN</span></button>
+            <button class="portal portal-two" data-room="coral" aria-label="View locked Coral room"><span class="portal-hole">✧</span><span class="portal-label">02 · CORAL</span></button>
+            <button class="portal portal-three" data-room="iris" aria-label="View full Iris room"><span class="portal-hole">✧</span><span class="portal-label">03 · IRIS</span></button>
+            <div class="tree tree-one"><i></i></div><div class="tree tree-two"><i></i></div><div class="bench"></div>
+            <div class="world-person sample-person"><span class="avatar" style="--avatar-color:#e6ac79">•ᴗ•</span><small>Milo · sample</small></div>
+            <div id="local-player" class="world-person local-player"><span class="avatar my-avatar" aria-hidden="true"></span><small><span class="my-name">Explorer</span> · you</small></div>
+            <span class="world-caption">Illustrated space · visual concept, not a 3D engine</span>
+          </div>
+          <div class="world-footer"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrow keys to move</span><span>Press E near a portal <span aria-hidden="true">↗</span></span></div>
+        </div>
+        <aside class="welcome-card"><p class="eyebrow">MAKE YOURSELF AT HOME</p><div class="welcome-avatar avatar my-avatar" aria-hidden="true"></div><h2>Hey, <span class="my-name">Explorer</span>.</h2><p>Every good team starts with a little personality.</p><a class="button secondary" href="#profile">Choose your character <span aria-hidden="true">→</span></a><hr><div class="welcome-stat"><strong>20</strong><span>characters to try<br>Original placeholder artwork</span></div><div class="welcome-stat"><strong>02</strong><span>players per game<br>One team, one shared goal</span></div></aside>
+      </div>
+      <div class="section-heading"><div><p class="eyebrow">PICK YOUR NEXT STOP</p><h2>A room for your team.</h2></div><a href="#rooms">View room board ↗</a></div>
+      <div class="room-grid" id="lobby-rooms"></div>
+    </section>
+    <section id="rooms" class="view" hidden aria-labelledby="rooms-title"><div class="page-heading"><div><p class="eyebrow">TOGETHER IS THE WHOLE POINT</p><h1 id="rooms-title">Room board</h1><p>Sample rooms for the same first game. Game selection is still TBD.</p></div><span class="pill"><span class="world-count">6</span> / 16 in the whole world · sample</span></div><div class="board-note">These room states are examples. Other players, scores, and timing are simulated.</div><div class="room-grid" id="board-rooms"></div><div id="room-detail" class="detail-card" hidden></div></section>
+    <section id="profile" class="view" hidden aria-labelledby="profile-title"><div class="page-heading"><div><p class="eyebrow">A LITTLE MORE YOU</p><h1 id="profile-title">Meet your character.</h1><p>Pick a look for your next little adventure.</p></div><span class="pill">20 original placeholders</span></div><div class="profile-layout"><div class="profile-preview"><span class="avatar my-avatar" aria-hidden="true"></span><h2 class="my-name">Explorer</h2><span class="pill">Local preview only</span></div><form id="profile-form" class="detail-card"><label for="display-name">Display name</label><input id="display-name" name="displayName" value="Explorer" autocomplete="off" aria-describedby="name-help name-error"><p id="name-help" class="muted">1–24 characters. Demo names already in use: Milo, Nova, Pip, Remy, Sol.</p><p id="name-error" class="error" aria-live="polite"></p><fieldset><legend>Choose your avatar</legend><div id="avatar-picker" class="avatar-picker"></div></fieldset><button class="button primary" type="submit">Use this character <span aria-hidden="true">→</span></button><p class="muted">Changes last until you reload. Account sign-in and saved profiles will connect to Adam’s shared client later.</p></form></div></section>
+    <section id="history" class="view" hidden aria-labelledby="history-title"><div class="page-heading"><div><p class="eyebrow">THE GOOD TIMES, KEPT</p><h1 id="history-title">Your adventures</h1><p>A place for your game results and shared victories.</p></div><span class="pill">0 wins · demo profile</span></div><div class="empty-state"><span class="empty-icon" aria-hidden="true">⚑</span><h2>Your story starts here.</h2><p>No games played in this preview. Once the first game and backend are ready, your own results will appear here.</p><a href="#rooms" class="button primary">Explore the rooms ↗</a></div></section>
+    <footer class="page-footer"><span>PORTAL PLAYHOUSE <span aria-hidden="true">✦</span> Built around together.</span><span>Local design draft · First game TBD</span></footer>
+  </main>
+  <div id="notice" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

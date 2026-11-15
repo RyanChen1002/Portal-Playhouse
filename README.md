@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | 11/15/2026 | Added frontend preview instructions and folder overview; clarified sample UI status and separate backend setup; consolidated history into one table. |
 | 0.1 | 11/14/2026 | Added the Local development section and hosted checklist link, and updated Project status to describe the added backend foundation and point to the hosted setup checklist. |
 
 A browser-based multiplayer 3D world where players explore connected rooms and play cooperative mini-games.
@@ -15,9 +16,11 @@ A browser-based multiplayer 3D world where players explore connected rooms and p
 
 ## Project status
 
-Planning and documentation stage. Ryan and Adam have approved the initial spec and component contract. Open decisions remain documented in those files. The backend foundation has been added: the local Supabase stack, the profile schema and functions, the shared client and mock, and their tests and CI. Hosted dev project setup follows the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md). Frontend code and deployed URLs will be added as development begins.
+The backend foundation includes the local Supabase stack, profile schema and functions, shared client and mock, tests, and CI. This branch adds a local frontend preview with original characters and a walkable 3D world. The preview uses sample data and is not connected to Supabase or live multiplayer. The first game remains undecided. Hosted dev project setup follows the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md).
 
-## Local development
+## Backend development
+
+These steps are for backend development and tests. They are not required to run the frontend preview below.
 
 Prerequisites:
 
@@ -37,6 +40,17 @@ npm run test:integration   # integration tests against the local stack
 ```
 
 Stop the stack with `npx supabase stop`. All tests and scripts target the local stack only. The manual steps for the hosted projects are in the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md).
+
+## Try the frontend preview
+
+Run `node tools/preview-server.cjs` from the repository root, then open http://127.0.0.1:4173 and choose **Explore demo**. No installation or credentials are needed for the visual preview. Use Node 22 to match the backend toolchain.
+
+See the [frontend guide](frontend/README.md) for controls.
+
+- `frontend/`: screens, 3D world, styles, and bundled Three.js with its license.
+- `tools/`: local preview server.
+- `shared/` and `supabase/`: Adam's merged backend client, database, and tests.
+- `doc/`: requirements, frontend roadmap, and game ideas.
 
 ## Planned first release
 
@@ -68,7 +82,7 @@ These are selected services, not a claim that deployment is configured. The fron
 - [Ryan's AI agent logs](agent-logs/ryan/README.md)
 - [Adam's AI agent log](agent-logs/adam/agentlog.md)
 
-The personal agent-log folders contain logs only. Application code will be organized in shared folders by function as development begins.
+The personal agent-log folders contain logs only. Frontend and backend code live in their shared folders above.
 
 ## AI-assisted development
 
