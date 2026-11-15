@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Services the tests do not use. Skipping them keeps the image pull small.
+  # The tests need only db, auth, rest and kong, which are not in this list. A future test
+  # that needs realtime or storage must remove that service (realtime, storage-api) from it.
+  SUPABASE_EXCLUDE: studio,storage-api,imgproxy,edge-runtime,logflare,vector,mailpit,realtime,postgres-meta,supavisor
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local Supabase stack
+        run: npx supabase start -x "$SUPABASE_EXCLUDE"
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and contract tests
+        run: npm test
+
+      - name: Database tests (pgTAP)
+        run: npm run test:db
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Security advisors (fail on WARN or above)
+        run: npx supabase db advisors --type security --fail-on warn
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: npx supabase stop --no-backup
