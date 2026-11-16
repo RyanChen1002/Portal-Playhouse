@@ -1,0 +1,15 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Preview Portal Playhouse locally",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"tools/preview-server.cjs"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

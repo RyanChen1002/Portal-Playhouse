@@ -1,8 +1,8 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.4
+**Version:** 0.6
 
-**Date:** 11/12/2026
+**Date:** 11/15/2026
 
 **Project option:** A — Contract-first build with midpoint swap
 
@@ -10,6 +10,8 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.6 | 11/15/2026 | Aligned account/profile documentation with merged PR #18, including session storage, subscriptions, name checks, and null handling. Multiplayer remains undecided. |
+| 0.5 | 11/13/2026 | Linked the original character roster selected by Ryan; retained existing avatar IDs and profile data fields. |
 | 0.4 | 11/12/2026 | Auth: email + password, no confirmation/reset/OAuth. Profile operations become database functions behind a shared TypeScript client and mock. Unique display names with an agreed rule. New error codes and an optional error `field`. Adds `shared/client/`. Details: [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) |
 | 0.3 | 11/11/2026 | Standardized history dates and columns; removed approval status fields and updated the document version. Requirements unchanged. |
 | 0.2 | 11/08/2026 | Updated notes and PR #2 review clarifications: Supabase Auth/data, Vercel, separate environments, 16-player whole-world limit, 20 avatars, room board/locking, game-specific results and wins |
@@ -47,7 +49,7 @@ Server-generated string IDs; Supabase user identity for player IDs; UTC ISO 8601
 | Session | `id`, `roomId`, `gameType`, fixed `playerIds`, `status: waiting/playing/finished/cancelled`, `startedAt`, `completedAt` (nullable timestamps), `revision: integer` |
 | Result | `id`, `sessionId`, `gameType`, `playerIds: string[]`, `outcome: win/loss`, `score: number or null`, `completedAt: timestamp` |
 
-Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; actual assets remain open. Reject unknown IDs. **Proposed v0.4:** new profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
+Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; the local preview maps these IDs to the [20 original characters](plans/2026-11-12-local-3d-preview.md#character-roster) selected by Ryan on 11/13/2026. Names are UI labels; persist the avatar ID, not the character name. Reject unknown IDs. **Proposed v0.4:** new profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
 
 **Display names (proposed v0.4):** trim leading and trailing whitespace and collapse internal runs to one space. The stored and returned name is that normalized form. It must be 1–24 Unicode code points, with no control or invisible/formatting characters. Names are **unique, compared case-insensitively**, and players may change them later, including changing only the case of their own name. The exact character sets are in the [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) and its plan. `shared/contracts/` exports the rule so the UI can validate before calling.
 
@@ -55,9 +57,9 @@ World bounds, axes, score units, and movement cadence require agreement. Board t
 
 ## 4. Proposed Application Data Operations
 
-These are proposed adapter operations, not deployed endpoints. Both partners may select Supabase SDK/RPC equivalents before implementation while preserving agreed semantics.
+PR #18 is merged into dev. Account/profile operations now exist in the shared client and database migrations. Rooms, movement, and game operations below remain proposals.
 
-**Proposed v0.4: the shared client is the frontend/backend boundary.** The frontend calls a TypeScript `PortalClient`, not Supabase tables or endpoints directly. There are two implementations with the same interface and behavior: a real one in `shared/client/` and an in-memory mock in `shared/mocks/`. One contract test suite runs against both. Every method returns `{data, error: null}` or `{data: null, error}` and never throws.
+**Proposed v0.4: the shared client is the frontend/backend boundary.** The frontend calls a TypeScript `PortalClient`, not Supabase tables or endpoints directly. There are two implementations with the same interface and behavior: a real one in `shared/client/` and an in-memory mock in `shared/mocks/`. One contract test suite runs against both. Async client methods return `{data, error: null}` or `{data: null, error}`. The exception is `onSessionChange(callback)`, which returns an unsubscribe function; its callback receives session state.
 
 | Client method | Backend (proposed v0.4) | Success data | Replaces |
 | --- | --- | --- | --- |
@@ -68,6 +70,14 @@ These are proposed adapter operations, not deployed endpoints. Both partners may
 | `getMe()` | `rpc get_me` | Profile | `GET /api/me` |
 | `updateMe({displayName?, avatarId?})` | `rpc update_me` | Profile; cannot edit identity or wins | `PATCH /api/me` |
 | `checkDisplayName(displayName)` | `rpc check_display_name` (callable signed out) | `{available: boolean}`; advisory only | new |
+
+Merged client behavior from PR #18:
+
+- Checking your own current display name returns available, including case-only changes.
+- Session subscribers receive the current state asynchronously; identical states may be omitted.
+- Sessions default to memory-only storage. Browser integration must supply storage and a stable storage key to survive reloads. Automatic background token refresh is disabled; session-aware calls can refresh an expired session.
+- Explicit null profile fields are rejected by the shared client; the SQL function treats null as unchanged.
+- Signing up signs out the current client session first. Signing out is local to that client's session.
 
 If a display name is taken between `signUp`'s availability check and account creation, the account is still created with a generated `Player-xxxxxx` name, and the returned Profile shows it.
 
@@ -128,7 +138,7 @@ Proposed persistence rules:
 
 ## 8. Parallel Work and Verification
 
-Ryan develops against shared mocks; Adam implements matching operations/events. Proposed future schema/mock locations: `shared/contracts/` and `shared/mocks/` (not yet created). **Proposed v0.4** adds `shared/client/` for the real client. Update schemas, client, mocks, and relevant checks together.
+Ryan develops against shared mocks; Adam implements matching operations/events. The merged code provides `shared/contracts/`, `shared/mocks/`, and `shared/client/` for account/profile operations. Update schemas, client, mocks, and relevant checks together.
 
 Verify the spec's AC-01 through AC-08: distinct accounts/persistence; 20 avatars; consistent movement and capacity; room board privacy; atomic start/locked-room rejection; matching outcomes; exactly-once persistence/wins; invalid actions/disconnects; desktop browsers and environment separation. These checks are planned, not passed runtime tests.
 
@@ -136,6 +146,6 @@ Milestones: accounts/profile, two-user lobby/board/rooms, first game/results, 3+
 
 ## 9. Changes and Approval
 
-Both partners approve interface changes before building against them. Record versions and actual approvals at the top, newest first. Task branches from dev -> reviewed PR into dev -> separate release PR from dev to main. Humans review and merge. Breaking changes need a coordinated update plan; after 1.0 use major increments for incompatibilities and minor increments for compatible changes.
+Both partners approve interface changes before building against them. Record versions in change history, newest first, and approval evidence in pull requests. Task branches from dev -> reviewed PR into dev -> separate release PR from dev to main. Humans review and merge. Breaking changes need a coordinated update plan; after 1.0 use major increments for incompatibilities and minor increments for compatible changes.
 
-This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: first game/rules, runtime/transport/framework, reconnect slot retention, timing/reconnect/retry semantics, concrete schemas, avatar assets, controls, performance targets, course dates, and swap additions.
+This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: first game/rules, runtime/transport/framework, reconnect slot retention, timing/reconnect/retry semantics, concrete schemas, final production artwork review, controls, performance targets, course dates, and swap additions.

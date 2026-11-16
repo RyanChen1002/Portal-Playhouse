@@ -1,13 +1,15 @@
 # Portal Playhouse — Initial Specification
 
-**Version:** 0.2
+**Version:** 0.4
 
-**Date:** 11/11/2026
+**Date:** 11/15/2026
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.4 | 11/15/2026 | Aligned authentication wording with merged PR #18. First game and multiplayer runtime remain open. |
+| 0.3 | 11/13/2026 | Replaced the previous character-style reference with the original local-preview roster selected by Ryan. Kept 20 avatar choices. |
 | 0.2 | 11/11/2026 | Standardized history dates and columns; removed approval status fields and updated the document version. Requirements unchanged. |
 | 0.1 | 11/08/2026 | Initial spec from updated meeting notes, including PR #2 review clarifications |
 
@@ -27,8 +29,8 @@ Register or sign in, load a profile, choose an avatar, enter the 3D lobby, check
 
 | ID | Requirement |
 | --- | --- |
-| FR-01 | Supabase Auth manages accounts and sessions. Provider and verification flow remain open. |
-| FR-02 | Persist display name and avatar selection; offer exactly 20 options. Notes request Disney-style character roles without requiring exact matches. Actual assets remain undecided. |
+| FR-01 | Supabase Auth manages accounts and sessions. The merged account milestone uses email/password with email confirmation off; password reset and OAuth are outside this milestone. |
+| FR-02 | Persist display name and avatar selection; offer exactly 20 options. Use the 20 original procedural 3D storybook characters from the local preview, selected by Ryan on 11/13/2026. The [character roster](plans/2026-11-12-local-3d-preview.md#character-roster) maps names to avatar IDs. Use original designs rather than recognizable franchise characters. |
 | FR-03 | Start with a maximum of 16 players total across the lobby and all game rooms. Moving between rooms does not consume another slot. Revisit capacity after performance testing. |
 | FR-04 | Show players joining, moving, and leaving the same space. Integrate two users first, then verify 3+ users and the full capacity. |
 | FR-05 | Board shows room availability, configured minimum/maximum players, participant display names, current score, and timing. **Proposed:** elapsed time from authoritative round start; remaining time only for timed games. |
@@ -83,6 +85,6 @@ Neither approach is selected. Vercel UI hosting and Supabase storage alone do no
 
 Milestones: review spec/contract -> accounts/profile -> two-user lobby/board/rooms -> game/results -> 3+ and full-capacity verification -> class-access deployment. Insert the course-required midpoint component swap at the actual scheduled point, with agreed additions in each other's components. Dates and swap features remain TBD. Class access is required 1–2 weeks before presentation.
 
-Implementation blockers: first game/rules; runtime/transport/framework; reconnect slot retention; auth provider; disconnect/retry timing; controls/camera/browsers; board timing and win-count defaults; exact schemas. Avatar assets, performance targets, dates, and swap work also require agreement.
+Implementation blockers: first game/rules; runtime/transport/framework; reconnect slot retention; disconnect/retry timing; controls/camera/browsers; board timing and win-count defaults; exact schemas. Ryan selected the current original character roster; final production artwork review, performance targets, dates, and swap work remain open.
 
 Use Superpowers for subsequent design/planning. Keep this as the single initial spec rather than duplicating it under another documentation tree. Do not write a detailed game implementation plan until its design is approved.
