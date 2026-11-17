@@ -13,6 +13,9 @@ const assets = new Map([
   ['/vendor/three.module.js', ['vendor/three.module.js', 'text/javascript; charset=utf-8']],
   ['/vendor/three.core.js', ['vendor/three.core.js', 'text/javascript; charset=utf-8']]
 ]);
+for (const file of ['characters.js','games/rooms.js','games/ui.js','games/scene.js','games/rules.js','games/games.css']) {
+  assets.set('/'+file,[file,file.endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8']);
+}
 const server = http.createServer((request, response) => {
   const asset = assets.get(request.url.split('?')[0]);
   if (!asset || !['GET', 'HEAD'].includes(request.method)) {
