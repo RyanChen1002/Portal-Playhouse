@@ -15,6 +15,7 @@ env:
   # Services the tests do not use. Skipping them keeps the image pull small.
   # The tests need only db, auth, rest and kong, which are not in this list. A future test
   # that needs realtime or storage must remove that service (realtime, storage-api) from it.
+  # The runtime does not use Supabase Realtime (it has its own WebSockets), so realtime stays excluded.
   SUPABASE_EXCLUDE: studio,storage-api,imgproxy,edge-runtime,logflare,vector,mailpit,realtime,postgres-meta,supavisor
 
 jobs:
@@ -32,6 +33,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate local signing keys
+        run: npm run db:keys
+
       - name: Start local Supabase stack
         run: npx supabase start -x "$SUPABASE_EXCLUDE"
 
@@ -41,9 +45,13 @@ jobs:
       - name: Unit and contract tests
         run: npm test
 
+      - name: Runtime tests (Workers test runtime)
+        run: npm run test:runtime
+
       - name: Database tests (pgTAP)
         run: npm run test:db
 
+      # Starts the local runtime itself (wrangler test harness) against the local stack.
       - name: Integration tests
         run: npm run test:integration
 

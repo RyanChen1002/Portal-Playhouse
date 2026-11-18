@@ -4,6 +4,8 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.4 | 11/18/2026 | Added local runtime commands (`npm run test:runtime`, `npm run runtime:dev` with `runtime/.dev.vars`) and the link to the Cloudflare hosted setup checklist; integration tests now start the local runtime themselves. |
+| 0.3 | 11/17/2026 | Local setup now starts the stack with `npm run db:start`, which first generates the Git-ignored local signing keys. |
 | 0.2 | 11/15/2026 | Added frontend preview instructions and folder overview; clarified sample UI status and separate backend setup; consolidated history into one table. |
 | 0.1 | 11/14/2026 | Added the Local development section and hosted checklist link, and updated Project status to describe the added backend foundation and point to the hosted setup checklist. |
 
@@ -32,14 +34,20 @@ Commands:
 
 ```sh
 npm ci                     # install pinned dependencies
-npx supabase start         # start the local stack (first run pulls images)
+npm run db:start           # generate local signing keys if absent, then start the local stack (first run pulls images)
 npm run typecheck          # type check
 npm test                   # unit and contract tests
+npm run test:runtime       # runtime tests in the Workers test runtime (no Supabase needed)
 npm run test:db            # database tests (pgTAP)
-npm run test:integration   # integration tests against the local stack
+npx supabase db reset      # optional: a clean local database before the integration tests
+npm run test:integration   # integration tests: real client, local runtime and local stack
 ```
 
-Stop the stack with `npx supabase stop`. All tests and scripts target the local stack only. The manual steps for the hosted projects are in the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md).
+The integration tests start the local runtime (the Worker and its World Durable Object, from `runtime/wrangler.jsonc`) themselves, against the local stack, so nothing else needs to be running.
+
+To run the runtime by hand for local frontend work, copy `runtime/.dev.vars.example` to `runtime/.dev.vars`, fill in the local secret key from `npx supabase status`, and run `npm run runtime:dev`. The client's `runtimeUrl` is then `ws://127.0.0.1:8787/connect`, and connections are accepted only from `http://127.0.0.1:4173` and `http://localhost:4173`.
+
+Stop the stack with `npx supabase stop`. All tests and scripts target the local stack only. The manual steps for the hosted projects are in the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md) and the [Cloudflare hosted setup checklist](doc/checklists/cloudflare-hosted-setup.md) (the dev runtime).
 
 ## Try the frontend preview
 

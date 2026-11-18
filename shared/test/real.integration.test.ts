@@ -114,7 +114,7 @@ describe('real client against the local stack', { timeout: TIMEOUT_MS }, () => {
     expect(update.error?.code).toBe('UNAUTHORIZED');
   });
 
-  it('the client never touches tables: no .from( and only the three RPCs in shared/client', () => {
+  it('the client never touches tables: no .from( and only the four player RPCs in shared/client', () => {
     const dir = fileURLToPath(new URL('../client/', import.meta.url));
     const files = readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
     expect(files.length).toBeGreaterThan(0);
@@ -122,7 +122,10 @@ describe('real client against the local stack', { timeout: TIMEOUT_MS }, () => {
       const source = readFileSync(join(dir, file), 'utf8');
       expect(source, `${file} must not call .from(`).not.toMatch(/\.from\s*\(/);
       for (const match of source.matchAll(/\.rpc\s*\(\s*['"`]([^'"`]+)['"`]/g)) {
-        expect(['get_me', 'update_me', 'check_display_name'], `${file} calls rpc ${match[1]}`).toContain(match[1]);
+        // get_my_results was added with the runtime; the runtime-only functions must never appear here.
+        expect(['get_me', 'update_me', 'check_display_name', 'get_my_results'], `${file} calls rpc ${match[1]}`).toContain(
+          match[1],
+        );
       }
     }
   });

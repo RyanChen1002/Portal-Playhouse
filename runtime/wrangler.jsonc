@@ -1,0 +1,50 @@
+// Portal Playhouse runtime: the Worker and the World Durable Object.
+// Top level = local development and tests (local Supabase stack, local preview origins).
+// `env.dev` and `env.production` hold placeholders only; Adam fills `dev` in Task 12.
+// Secret SUPABASE_SECRET_KEY: `.dev.vars` locally (see .dev.vars.example),
+// `wrangler secret put SUPABASE_SECRET_KEY --env <name>` for hosted environments.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "portal-runtime-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-17",
+  "vars": {
+    "SUPABASE_URL": "http://127.0.0.1:54321",
+    "ALLOWED_ORIGINS": "http://127.0.0.1:4173,http://localhost:4173"
+  },
+  "secrets": {
+    "required": ["SUPABASE_SECRET_KEY"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "WORLD", "class_name": "WorldObject" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["WorldObject"] }],
+  "env": {
+    "dev": {
+      "name": "portal-runtime-dev",
+      "vars": {
+        "SUPABASE_URL": "https://REPLACE-dev.supabase.co",
+        "ALLOWED_ORIGINS": "https://REPLACE-dev-frontend.example"
+      },
+      "secrets": {
+        "required": ["SUPABASE_SECRET_KEY"]
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "WORLD", "class_name": "WorldObject" }]
+      }
+    },
+    "production": {
+      "name": "portal-runtime-production",
+      "vars": {
+        "SUPABASE_URL": "https://REPLACE-production.supabase.co",
+        "ALLOWED_ORIGINS": "https://REPLACE-production-frontend.example"
+      },
+      "secrets": {
+        "required": ["SUPABASE_SECRET_KEY"]
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "WORLD", "class_name": "WorldObject" }]
+      }
+    }
+  }
+}

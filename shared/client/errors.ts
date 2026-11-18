@@ -29,6 +29,13 @@ export const DEFAULT_MESSAGES: Record<ErrorCode, string> = {
   WEAK_PASSWORD: 'Please choose a stronger password.',
   RATE_LIMITED: 'Too many attempts. Please wait a moment and try again.',
   SERVICE_UNAVAILABLE: 'The service is unavailable right now. Please try again later.',
+  ROOM_NOT_FOUND: 'That room could not be found.',
+  ROOM_FULL: 'That room is full.',
+  ROOM_LOCKED: 'That game is already in progress.',
+  WORLD_FULL: 'The playhouse is full right now. Please try again soon.',
+  NOT_IN_GAME: 'You are not in a game.',
+  INVALID_ACTION: 'That action is not allowed right now.',
+  GAME_NOT_READY: 'The game is not ready to start yet.',
 };
 
 export function appError(code: ErrorCode, field?: ErrorField, message?: string): AppError {

@@ -1,3 +1,13 @@
+import type {
+  GameResult,
+  PortalPartnersTarget,
+  RoomId,
+  RoomSnapshot,
+  ServerMessage,
+  Vec3,
+  WorldSnapshot,
+} from './realtime';
+
 export const ERROR_CODES = [
   'VALIDATION_ERROR',
   'UNAUTHORIZED',
@@ -7,6 +17,13 @@ export const ERROR_CODES = [
   'WEAK_PASSWORD',
   'RATE_LIMITED',
   'SERVICE_UNAVAILABLE',
+  'ROOM_NOT_FOUND',
+  'ROOM_FULL',
+  'ROOM_LOCKED',
+  'WORLD_FULL',
+  'NOT_IN_GAME',
+  'INVALID_ACTION',
+  'GAME_NOT_READY',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -41,13 +58,67 @@ export interface Profile {
   id: string;
   displayName: string;
   avatarId: AvatarId;
-  /** Always 0 in this milestone. */
+  /** One per winning session the player took part in. */
   winsTotal: number;
 }
 
 export interface SessionState {
   signedIn: boolean;
   playerId: string | null;
+}
+
+export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
+/**
+ * Why a world connection reached `closed`: `idle`, `replaced` (signed in elsewhere) and `left`
+ * come from 1000 closes (or leaveWorld); `unauthorized` from a 4401 the refresh did not fix (or a
+ * reconnect admitted as another player); `invalid` from 4400; `worldFull` from 4409;
+ * `unavailable` when the first connection failed (4503 or no answer); `lost` when the reconnect
+ * schedule ran out.
+ */
+export type WorldCloseReason =
+  | 'idle'
+  | 'replaced'
+  | 'left'
+  | 'unauthorized'
+  | 'invalid'
+  | 'worldFull'
+  | 'unavailable'
+  | 'lost';
+export type ServerEventType = Exclude<ServerMessage['type'], 'request.accepted' | 'request.error'>;
+export type ServerEventPayload<K extends ServerEventType> = Extract<ServerMessage, { type: K }>['payload'];
+
+/** A live connection to the shared world (spec §8.1). Methods never throw. */
+export interface WorldConnection {
+  readonly playerId: string;
+  readonly state: ConnectionState;
+  /**
+   * Null until the state is `closed`; then why it closed. Set before the `closed` state is
+   * emitted, so `onConnectionState` listeners can read it.
+   */
+  readonly closeReason: WorldCloseReason | null;
+  /**
+   * The latest world state, kept current from server events. Returns a copy.
+   * `self.position` is the last position this client sent (the server does not echo moves);
+   * it is overwritten by `player.corrected` and by server snapshots.
+   */
+  snapshot(): WorldSnapshot;
+  joinRoom(roomId: RoomId): Promise<Result<RoomSnapshot>>;
+  leaveRoom(): Promise<Result<RoomSnapshot>>;
+  setReady(ready: boolean): Promise<Result<null>>;
+  /** Fills in the current round's sessionId and a fresh actionId. */
+  interact(target: PortalPartnersTarget): Promise<Result<null>>;
+  /** Frees the slot at once; the connection is then closed. Also called by signOut(). */
+  leaveWorld(): Promise<Result<null>>;
+  /**
+   * Not awaited; the sequence number is managed internally. Ignored while not connected.
+   * Throttled to at most 20 sends per second; extra calls replace a held-back latest position,
+   * which is sent when the next slot opens.
+   */
+  sendMove(position: Vec3, rotation: number): void;
+  /** Returns an unsubscribe function. */
+  on<K extends ServerEventType>(type: K, cb: (p: ServerEventPayload<K>) => void): () => void;
+  /** Returns an unsubscribe function. */
+  onConnectionState(cb: (s: ConnectionState) => void): () => void;
 }
 
 export interface PortalClient {
@@ -60,4 +131,16 @@ export interface PortalClient {
   getMe(): Promise<Result<Profile>>;
   updateMe(input: { displayName?: string; avatarId?: AvatarId }): Promise<Result<Profile>>;
   checkDisplayName(displayName: string): Promise<Result<{ available: boolean }>>;
+  /**
+   * Opens the world connection; resolves after the first `world.snapshot`. Returns the open
+   * connection if it belongs to the signed-in player (one for another player is left first).
+   * A failed first connect is not retried automatically: the UI should offer "try again".
+   * Reconnects after a drop are automatic.
+   */
+  connectWorld(): Promise<Result<WorldConnection>>;
+  /** The caller's results, newest first. `limit` 1 to 50, default 20. */
+  getMyResults(input?: {
+    limit?: number;
+    cursor?: string;
+  }): Promise<Result<{ results: GameResult[]; nextCursor: string | null }>>;
 }
