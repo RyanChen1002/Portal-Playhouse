@@ -1,8 +1,8 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.7
+**Version:** 0.8
 
-**Date:** 11/17/2026
+**Date:** 11/18/2026
 
 **Project option:** A — Contract-first build with midpoint swap
 
@@ -10,6 +10,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.8 | 11/18/2026 | Proposed by Adam on `feature/runtime-transport`; tentative until Ryan approves the pull request. Aligned the §5 message table and the §3 Result model with the built wire shapes in `shared/contracts/realtime.ts` (`world.snapshot`, `room.snapshot`, `player.left` reasons, `GameResult`). Added client notes on reconnect outcomes, late `failed` results, and close codes, and the connection's `closeReason`. Pointed the stale "game rules remain TBD" line to runtime design §6. |
 | 0.7 | 11/17/2026 | Proposed by Adam on `feature/runtime-transport`; **tentative until Ryan approves the pull request**. Records the runtime and real-time interface from the [runtime design](specs/2026-11-17-runtime-transport-design.md) (§11 there): a Cloudflare Worker plus one World Durable Object over WebSocket (tentative); first-message real-time authentication, refresh, one connection per account, idle limit; position-based `player.move`; the new message table (including `player.ready`) and error handling; the board delivered on the world connection instead of `GET /api/rooms`; `get_my_results` instead of `GET /api/me/results`; `Result.outcome` gains `cancelled` with `cancelReason`; the 20-second reconnect grace with per-game disconnect settings; cancellations saved but never counted as wins; and the `PortalClient` additions. Portal Partners is the first networked game. |
 | 0.6 | 11/15/2026 | Aligned account/profile documentation with merged PR #18, including session storage, subscriptions, name checks, and null handling. Multiplayer remains undecided. |
 | 0.5 | 11/13/2026 | Linked the original character roster selected by Ryan; retained existing avatar IDs and profile data fields. |
@@ -48,7 +49,7 @@ Server-generated string IDs; Supabase user identity for player IDs; UTC ISO 8601
 | Presence | `playerId`, `roomId`, `position: {x: number, y: number, z: number}`, `rotation: number` (proposed yaw in radians) |
 | RoomSummary | `id`, `name`, `gameType: string or null`, `minPlayers: integer`, `maxPlayers: integer`, `status: waiting/playing`, `players: [{id, displayName, avatarId}]`, `sessionId: string or null`, `startedAt: timestamp or null`, `durationSeconds: integer or null`, `score: number or null`, `revision: integer` |
 | Session | `id`, `roomId`, `gameType`, fixed `playerIds`, `status: waiting/playing/finished/cancelled`, `startedAt`, `completedAt` (nullable timestamps), `revision: integer` |
-| Result | `id`, `sessionId`, `gameType`, `playerIds: string[]`, `outcome: win/loss/cancelled`, `cancelReason: left/disconnected or null` (set exactly when cancelled), `score: number or null`, `completedAt: timestamp` (for a cancellation, when it was cancelled) |
+| Result (`GameResult`, v0.8) | `id`, `sessionId`, `gameType: "portal-partners"`, `outcome: win/loss/cancelled`, `cancelReason: left/disconnected or null` (set exactly when cancelled), `score: number`, `startedAt: timestamp`, `completedAt: timestamp` (for a cancellation, when it was cancelled), `durationSeconds: integer`, `players: [{id, displayName, avatarId}]` (each participant's current display name and avatar) |
 
 Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; the local preview maps these IDs to the [20 original characters](plans/2026-11-12-local-3d-preview.md#character-roster) selected by Ryan on 11/13/2026. Names are UI labels; persist the avatar ID, not the character name. Reject unknown IDs. **Proposed v0.4:** new profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
 
@@ -111,9 +112,9 @@ Proposed statuses: 400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 RO
 | Client -> backend | `game.ready {ready}` | Waiting rooms only |
 | Client -> backend | `game.interact {sessionId, actionId, target}` | Replaces the generic `game.action`; Portal Partners targets are `lever`, `crystal-a`, `crystal-b`, `exit` |
 | Client -> backend | `world.leave {}` | Frees the slot immediately, with no grace |
-| Backend -> client | `world.snapshot {self, room, players, board, revision}` | After auth and after every reconnect |
-| Backend -> client | `room.snapshot {room, players, session, revision}` | After a join or leave |
-| Backend -> location | `player.joined`, `player.left {playerId, reason}`, `player.updated {playerId, position, rotation, sequence, revision}`, `player.connection {playerId, connected}` | Same location only |
+| Backend -> client | `world.snapshot {self, room, board, lastFinished}` | After auth and after every reconnect. `self` is `{playerId, roomId, position, rotation}`; `room` is a room snapshot (below); `board` is `RoomSummary[]`; `lastFinished` is the player's latest `game.finished` payload or null |
+| Backend -> client | `room.snapshot {roomId, summary, players, session, revision}` | A room snapshot: `summary` is the `RoomSummary` (null for the lobby), `players` the presences, `session` the running round's state with its `sessionId` (or null). Also the `request.accepted` payload of `room.join` and `room.leave` |
+| Backend -> location | `player.joined`, `player.left {playerId, reason, revision}` (`reason`: `moved`, `left`, `disconnected`, or `idle`), `player.updated {playerId, position, rotation, sequence, revision}`, `player.connection {playerId, connected}` | Same location only |
 | Backend -> location | `player.ready {playerId, ready, revision}` | Readiness changes in a waiting room |
 | Backend -> client | `player.corrected {sequence, position, rotation, reason}` | `reason`: `rejected` (a move was refused) or `bridgeClosed` (sent back off a closing bridge). Not an error and does not close the connection |
 | Backend -> all admitted | `room.updated {room}` | Board: availability, participants, score, and timing without spectator access |
@@ -124,6 +125,22 @@ Proposed statuses: 400 VALIDATION_ERROR, 401 UNAUTHORIZED, 403 FORBIDDEN, 404 RO
 
 Errors: the existing codes in §4 plus NOT_IN_GAME, INVALID_ACTION, and GAME_NOT_READY (readying outside a waiting room), all now adopted; they are added to `shared/contracts/`. `SERVICE_UNAVAILABLE` is also returned when a connection cannot be admitted (for example, Supabase unreachable or too many connections awaiting sign-in).
 
+**Client notes (v0.8):**
+
+- **Missed outcomes.** When a round ends while a player is away, its outcome reaches that player on reconnect only as `world.snapshot.lastFinished`; no `game.finished` event is sent. Show it if its `sessionId` differs from the last outcome shown.
+- **Late failures.** A `game.finished` with `persistenceStatus: "failed"` can arrive later for an older `sessionId`, even during a new round. Compare `sessionId` before updating the screen. `result.saved` confirms a save.
+- **`player.left` reasons.** `moved` (went to another location), `left` (`world.leave`), `disconnected` (the grace period ran out), `idle` (closed after 10 minutes idle).
+- **Close codes.** The shared client handles these and reports why a connection ended as `WorldConnection.closeReason` (`idle`, `replaced`, `left`, `unauthorized`, `invalid`, `worldFull`, `unavailable`, `lost`), set before the `closed` state is reported:
+
+| Close | Meaning | Client behavior |
+| --- | --- | --- |
+| 1000 with reason `session.replaced`, `idle`, or `left` | Replaced by a newer connection, idle, or left | Terminal |
+| 4401 `UNAUTHORIZED` | Token missing, invalid, or expired | Refresh the session once, then retry |
+| 4409 `WORLD_FULL` | The world has 16 players | Terminal |
+| 4503 `SERVICE_UNAVAILABLE` | Not admitted right now (for example, Supabase or the signing keys unreachable) | Retried on the schedule below |
+| 4400 | Invalid messages | Terminal |
+| Any other close | Connection lost | Retried at 0.5, 1, 2, 4, and 8 s, then `closed` with `lost` |
+
 Revisions: one counter per room, increasing on every change to that room's membership, positions, or game state. Clients ignore events older than their latest snapshot; after a gap or reconnect they use a fresh snapshot. Movement is server-validated against a speed budget, bounds, and game rules (design §5.4). Do not treat message delivery as authorization. Wire-level details beyond this table are left to the builder.
 
 ## 6. Shared Rules
@@ -133,7 +150,7 @@ Revisions: one counter per room, increasing on every change to that room's membe
 - Initial game requires exactly two players. Start once when both are ready; fixed participants cannot be replaced mid-round.
 - Playing rooms reject new participants with ROOM_LOCKED. Others can see limited board information; in-room spectators are deferred.
 - Proposed lifecycle: waiting -> playing -> finished or cancelled. Replay creates a new session ID and resets readiness. Finished/cancelled rooms return to waiting.
-- Backend validates actions, computes outcomes, and persists results. Concrete game rules remain TBD.
+- Backend validates actions, computes outcomes, and persists results. Portal Partners rules: [runtime design](specs/2026-11-17-runtime-transport-design.md) §6.
 - **Disconnects (v0.7, tentative):** an unexpected disconnect starts the 20-second grace above; reconnecting within it restores the player exactly where they were (same room, position, facing, and running round). Each game declares (a) whether its round pauses or keeps running during the grace and (b) on expiry, whether the round is cancelled or the remaining player may finish. Only "keep running" and "cancel" are built now; "pause" and "finish alone" are deferred ([future features](future-features.md)). Portal Partners keeps running and cancels on expiry; an explicit leave (`room.leave` or `world.leave`) of a playing room cancels the round immediately, with no win. Explain why and offer return. If the runtime restarts, live state is lost and any round in progress ends with no result.
 
 ## 7. Results and Wins

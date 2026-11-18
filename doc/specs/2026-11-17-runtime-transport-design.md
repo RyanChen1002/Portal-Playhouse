@@ -1,8 +1,8 @@
 # Runtime Design: Cloudflare Durable Objects World, Rooms, and Portal Partners
 
-**Version:** 0.1
+**Version:** 0.2
 
-**Date:** 11/17/2026
+**Date:** 11/18/2026
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
@@ -18,6 +18,7 @@ Labels used below: **Decided** means Adam decided it in brainstorming on 11/17/2
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | 11/18/2026 | After the whole-branch review: §8.2 table now matches the built wire shapes (`world.snapshot`, `room.snapshot`, `player.left` reasons) and gains client notes on missed outcomes, late `failed` results, and close codes; §5.2 says a key set that never loaded gives `SERVICE_UNAVAILABLE`, and the client reports why a connection closed (`closeReason`); §7.3 notes that a permanently rejected result keeps retrying every 10 minutes; §12 renumbered, with a new item on spawn facing at round start. |
 | 0.1 | 11/17/2026 | Initial runtime design: one World Durable Object, position-based movement, 20-second reconnect grace, Portal Partners as the first networked game, and results (including cancellations) in Supabase. After review: a capped movement allowance, asymmetric local signing keys, and players on a closing bridge sent back to the side they came from. Added token-verification hardening, a cap on connections awaiting sign-in, sign-out handling, and the no-card Cloudflare account note; deferred the load check to integration testing. |
 
 ## 1. Intent
@@ -127,7 +128,7 @@ Browser (Ryan's UI)
    - Require a non-empty `sub`, `role` equal to `authenticated`, and `aud` equal to `authenticated`. This rejects legacy anon and service-role tokens even if they were signed by an accepted key. Allow at most 30 seconds of clock skew on expiry.
    - Refetch the key set for an unknown key ID at most once per minute. Otherwise anyone could make the runtime call Supabase on every attempt by inventing key IDs.
    - Never log tokens, `auth` or `auth.refresh` payloads, or the Supabase secret key. Log only the player ID and the error code.
-   - All failures return the same `UNAUTHORIZED` message, without saying which check failed.
+   - All failures return the same `UNAUTHORIZED` message, without saying which check failed. The one exception (added after the whole-branch review): while the key set has never loaded (the first fetch failed, or it is in its one-minute cooldown with no keys), no token can be checked, so the runtime replies `SERVICE_UNAVAILABLE` and closes with 4503, which the client retries.
 3. If no valid `auth` arrives within **10 seconds**, or verification fails, the server sends `request.error` with `UNAUTHORIZED` and closes. No other message is accepted before authentication. At most **32 connections** may be waiting to authenticate at once; further ones are closed immediately with `SERVICE_UNAVAILABLE`. The 4 KB message limit (§5.4) applies before authentication too. (**Proposal**)
 4. The runtime reads the player's display name and avatar from Supabase using a server-only function (§7.2). Profile changes take effect on the next connection. A verified user with no profile is rejected with `SERVICE_UNAVAILABLE` and logged, as in the backend design. If Supabase cannot be reached, the connection is also rejected with `SERVICE_UNAVAILABLE`; the runtime never admits a player with blank or guessed profile data.
 5. Admission: if the player is already held in the grace period (§5.6), they are restored. Otherwise, if 16 players already hold slots, the server replies `WORLD_FULL` and closes. Otherwise the player gets a slot and is placed at the lobby spawn point.
@@ -135,7 +136,7 @@ Browser (Ryan's UI)
 7. **Token refresh:** before the access token expires, the client sends `auth.refresh {token}` with a new token for the **same user**. A token for a different user is rejected and the connection closed. If the current token expires without a refresh, the server closes the connection with `UNAUTHORIZED`; the grace period then applies. (**Proposal**)
 8. **One connection per account** (**Proposal**): a new authenticated connection for a player who already has one takes over the existing slot, room, and position. The old connection receives `session.replaced` and is closed. This is also how a reload within the grace period resumes.
 9. **Sign-out** (**Proposal**): the client sends `world.leave` before signing out. Supabase access tokens stay valid until they expire (one hour by default) even after sign-out, and the runtime does not ask Supabase whether a session was revoked. A stolen or signed-out token could therefore connect until it expires. This is an accepted limitation, the same as for the existing profile functions.
-10. **Idle limit** (**Proposal**): a connection that sends no messages other than `auth.refresh` for **10 minutes** is closed with an explanation, and its slot is freed immediately (no grace). This stops an idle open tab from keeping the object awake all day against the shared daily allowance.
+10. **Idle limit** (**Proposal**): a connection that sends no messages other than `auth.refresh` for **10 minutes** is closed with an explanation, and its slot is freed immediately (no grace). This stops an idle open tab from keeping the object awake all day against the shared daily allowance. The client reports why a connection ended as `WorldConnection.closeReason` (`idle` here; also `replaced`, `left`, `unauthorized`, `invalid`, `worldFull`, `unavailable`, or `lost` when reconnecting gave up), set before the `closed` state is reported, so the UI can explain it.
 
 ### 5.3 World and rooms
 
@@ -275,7 +276,7 @@ Coordinates are in the arena space used by `rules.js`.
 
 1. When a round ends (win, loss, or cancellation), the World object writes a **pending result** to its durable storage before announcing `game.finished {persistenceStatus: "pending"}`.
 2. It calls `record_portal_partners_result`. On success, it deletes the pending record and sends `result.saved {sessionId, resultId}` to any participant still connected.
-3. On failure, it retries with backoff (for example 5 s, 30 s, 2 min, then every 10 min) using a Durable Object alarm, so retries survive restarts. Participants see `persistenceStatus: "pending"`, and `failed` after the first hour of failures; retries continue regardless. (**Proposal**: timings)
+3. On failure, it retries with backoff (for example 5 s, 30 s, 2 min, then every 10 min) using a Durable Object alarm, so retries survive restarts. Participants see `persistenceStatus: "pending"`, and `failed` after the first hour of failures; retries continue regardless. (**Proposal**: timings) A result that Supabase permanently rejects therefore keeps retrying every 10 minutes; this is accepted, since retries never stop, and each failure shows up in the logs.
 4. The unique session ID makes every retry safe.
 
 The client must never show a result as saved before `result.saved` (or `persistenceStatus: "saved"`) arrives.
@@ -306,9 +307,9 @@ All messages are JSON with the contract envelope `{type, requestId, payload}` fr
 | C -> S | `game.ready {ready}` | Waiting rooms only |
 | C -> S | `game.interact {sessionId, actionId, target}` | Portal Partners targets in §6.2 |
 | C -> S | `world.leave {}` | Frees the slot immediately |
-| S -> C | `world.snapshot {self, room, players, board, revision}` | After auth and after every reconnect |
-| S -> C | `room.snapshot {room, players, session, revision}` | After a join or leave |
-| S -> location | `player.joined`, `player.left {playerId, reason}`, `player.updated {playerId, position, rotation, sequence, revision}`, `player.connection {playerId, connected}` | Same location only |
+| S -> C | `world.snapshot {self, room, board, lastFinished}` | After auth and after every reconnect. `self` is `{playerId, roomId, position, rotation}`; `room` is a room snapshot (below); `board` is `RoomSummary[]`; `lastFinished` is the player's latest `game.finished` payload or null |
+| S -> C | `room.snapshot {roomId, summary, players, session, revision}` | A room snapshot (`summary` null for the lobby; `session` the running round's state with its `sessionId`, or null); also the reply to `room.join` and `room.leave` |
+| S -> location | `player.joined`, `player.left {playerId, reason, revision}` (`reason`: `moved`, `left`, `disconnected`, or `idle`), `player.updated {playerId, position, rotation, sequence, revision}`, `player.connection {playerId, connected}` | Same location only |
 | S -> location | `player.ready {playerId, ready, revision}` | Readiness changes in a waiting room (added while planning) |
 | S -> C | `player.corrected {sequence, position, rotation, reason}` | `reason`: `rejected` (a move was refused) or `bridgeClosed` (sent back off a closing bridge, §6.2) |
 | S -> all | `room.updated {room}` | Board |
@@ -318,6 +319,10 @@ All messages are JSON with the contract envelope `{type, requestId, payload}` fr
 | S -> C | `session.replaced {}` | Before closing an older connection |
 
 - **Revisions** (**Proposal**): one revision counter per room, increasing on every change to that room's membership, positions, or game state. Clients ignore events older than their latest snapshot and request nothing; after reconnecting they get a fresh snapshot.
+- **Client notes** (added after the whole-branch review; the contract §5 has the same notes):
+  - A round that ended while a player was away reaches them on reconnect only as `world.snapshot.lastFinished`; no `game.finished` is sent. Show it if its `sessionId` differs from the last outcome shown.
+  - A later `game.finished` with `persistenceStatus: "failed"` can arrive for an older `sessionId`, even during a new round; compare `sessionId`. `result.saved` confirms a save.
+  - Close codes: 1000 with reason `session.replaced`, `idle`, or `left` is terminal; 4401 `UNAUTHORIZED` makes the client refresh once, then retry; 4409 `WORLD_FULL` is terminal; 4503 `SERVICE_UNAVAILABLE` is retried on the schedule; 4400 (invalid messages) is terminal; any other close is retried at 0.5, 1, 2, 4, and 8 s.
 - **Error codes:** existing `UNAUTHORIZED`, `VALIDATION_ERROR`, `RATE_LIMITED`, `SERVICE_UNAVAILABLE`, `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_LOCKED`, `WORLD_FULL`, plus the contract's proposed `NOT_IN_GAME`, `INVALID_ACTION`, and `GAME_NOT_READY` (readying outside a waiting room). These are added to `shared/contracts/`.
 
 ## 9. Code layout
@@ -372,10 +377,11 @@ The contract text itself is updated on this branch before implementation, so Rya
 3. Joining a room requires standing within 3.2 of its entrance, as in his courtyard.
 4. Waiting rooms have no positions; the waiting view is his choice.
 5. Portal Partners adapted to one character per player, including the rule that the exit needs both players connected, and players on a closing bridge being sent back to the side they came from (a "fell back" moment in the UI).
-9. Cancelled rounds appear in personal history.
-6. Readiness resets when anyone joins or leaves the room.
-7. The idle limit of 10 minutes.
-8. Frontend wiring to the real runtime is his follow-up work against the mock and client.
+6. Cancelled rounds appear in personal history.
+7. Readiness resets when anyone joins or leaves the room.
+8. The idle limit of 10 minutes.
+9. Frontend wiring to the real runtime is his follow-up work against the mock and client.
+10. Spawn rotation at round start is unspecified; players keep their current facing.
 
 ## 13. Left to the builder
 

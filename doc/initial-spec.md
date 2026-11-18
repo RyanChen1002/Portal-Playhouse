@@ -1,13 +1,14 @@
 # Portal Playhouse — Initial Specification
 
-**Version:** 0.5
+**Version:** 0.6
 
-**Date:** 11/17/2026
+**Date:** 11/18/2026
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.6 | 11/18/2026 | AC-05 now points to the Portal Partners winning and losing sequences in the [runtime design](specs/2026-11-17-runtime-transport-design.md) §6 and §10, replacing "once the first game is chosen". No other requirements changed. |
 | 0.5 | 11/17/2026 | Pointers to the [runtime design](specs/2026-11-17-runtime-transport-design.md) (proposed by Adam; tentative until Ryan approves the pull request): the tentative runtime choice in FR-12, §7, and §8; removed "reconnect slot retention" and "disconnect timing" from the blockers; Portal Partners named as the first networked game. No other requirements changed. |
 | 0.4 | 11/15/2026 | Aligned authentication wording with merged PR #18. First game and multiplayer runtime remain open. |
 | 0.3 | 11/13/2026 | Replaced the previous character-style reference with the original local-preview roster selected by Ryan. Kept 20 avatar choices. |
@@ -68,7 +69,7 @@ These are planned checks, not tests already run.
 | AC-02 | Clients consistently see joins, movement, and departures. Support 16 players total distributed across the lobby and game rooms; reject a 17th admission, including concurrent joins. Moving between rooms preserves the player's existing world slot. | FR-03, FR-04 |
 | AC-03 | Board correctly displays availability, names, limits, score, and agreed timing without private account data. | FR-05 |
 | AC-04 | One player cannot start; two ready players create exactly one round. A third user cannot join a locked round but can see its board score. | FR-06, FR-07 |
-| AC-05 | Both players receive matching win/loss outcomes and may replay or return. Add concrete winning/losing sequences once the first game is chosen. | FR-08 |
+| AC-05 | Both players receive matching win/loss outcomes and may replay or return. Portal Partners winning and losing sequences: [runtime design](specs/2026-11-17-runtime-transport-design.md) §6 (rules) and §10 (verification). | FR-08 |
 | AC-06 | Save one result per completed session in the correct table. Duplicate completion/retry does not duplicate history/wins. Verify the agreed win-count rule for both participants. | FR-09 |
 | AC-07 | Invalid/unauthenticated actions do not mutate state. Failed joins preserve location. Disconnect/cancellation follows approved rules; an admitted player can return to the lobby without requesting another world slot. Failed persistence is shown as pending/failed and retried without duplication. | FR-09, FR-10 |
 | AC-08 | The complete journey works in agreed desktop browsers with agreed controls. Dev and production connect only to their own Supabase environments. | FR-11, FR-12 |
