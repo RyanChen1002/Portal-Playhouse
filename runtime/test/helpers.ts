@@ -45,7 +45,34 @@ export interface FakeSupabase {
   down: boolean;
   /** Headers and bodies of RPC calls, for assertions. */
   rpcCalls: { url: string; headers: Headers; body: unknown }[];
+  /** Saved results by session id (idempotent, like `record_portal_partners_result`). */
+  results: Map<string, string>;
+  /** When true, `record_portal_partners_result` fails at the network level. */
+  resultsDown: boolean;
+  /** Replaces the default `record_portal_partners_result` behaviour when set. */
+  onRecord: ((body: RecordBody, fake: FakeSupabase) => Response | Promise<Response>) | null;
+  /** Calls made to `record_portal_partners_result`. */
+  recordCalls(): RecordBody[];
   restore(): void;
+}
+
+export interface RecordBody {
+  session_id: string;
+  player_ids: string[];
+  outcome: string;
+  cancel_reason: string | null;
+  score: number;
+  started_at: string;
+  completed_at: string;
+}
+
+const RECORD_FN = '/rest/v1/rpc/record_portal_partners_result';
+
+/** The default fake: one row per session id, returning the same result id on repeats. */
+export function recordIdempotently(body: RecordBody, fake: FakeSupabase): Response {
+  let id = fake.results.get(body.session_id);
+  if (!id) fake.results.set(body.session_id, (id = crypto.randomUUID()));
+  return Response.json({ resultId: id });
 }
 
 /**
@@ -58,6 +85,10 @@ export async function installFakeSupabase(): Promise<FakeSupabase> {
     profiles: new Map(),
     down: false,
     rpcCalls: [],
+    results: new Map(),
+    resultsDown: false,
+    onRecord: null,
+    recordCalls: () => fake.rpcCalls.filter((c) => c.url.endsWith(RECORD_FN)).map((c) => c.body as RecordBody),
     restore: () => spy.mockRestore(),
   };
   const spy: MockInstance<typeof fetch> = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -77,6 +108,11 @@ export async function installFakeSupabase(): Promise<FakeSupabase> {
           );
         }
         return Response.json(card);
+      }
+      if (req.url.endsWith(RECORD_FN)) {
+        if (fake.onRecord) return fake.onRecord(body as RecordBody, fake);
+        if (fake.resultsDown) throw new TypeError('fetch failed');
+        return recordIdempotently(body as RecordBody, fake);
       }
     }
     return new Response('not found', { status: 404 });

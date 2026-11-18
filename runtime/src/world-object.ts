@@ -12,6 +12,7 @@ import {
   type FinishedRound,
 } from '../../shared/world';
 import { createTokenVerifier, type TokenVerifier } from './auth';
+import { PendingResults } from './results';
 import { createSupabaseServer, type SupabaseServer } from './supabase';
 
 /** World.advance() cadence while anyone holds a slot (spec §6.4 precision). */
@@ -39,6 +40,8 @@ const MESSAGES: Partial<Record<ErrorCode, string>> = {
 
 export interface TestOverrides {
   authDeadlineMs?: number;
+  /** Clock for result-save scheduling only (retry times, the 1 h `failed` mark). */
+  resultsNow?: () => number;
 }
 
 /** True only for the local Supabase stack. Test-only overrides are refused anywhere else. */
@@ -78,6 +81,10 @@ export class WorldObject extends DurableObject<Env> {
   private readonly conns = new Map<ConnId, Conn>();
   private ticker: ReturnType<typeof setInterval> | null = null;
   private authDeadlineMs = AUTH_DEADLINE_MS;
+  private resultsNow: () => number = () => Date.now();
+  private readonly results: PendingResults;
+  /** Sessions with a save attempt in progress; at most one attempt per session at a time. */
+  private readonly saving = new Set<string>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -87,12 +94,21 @@ export class WorldObject extends DurableObject<Env> {
     this.world = new World({ now: () => Date.now(), newId: () => crypto.randomUUID() });
     this.verifier = createTokenVerifier({ supabaseUrl: env.SUPABASE_URL });
     this.supabase = createSupabaseServer({ url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY });
+    this.results = new PendingResults(
+      ctx.storage.sql,
+      (at) => ctx.storage.setAlarm(at),
+      () => this.resultsNow(),
+      () => ctx.storage.deleteAlarm(),
+    );
+    // Pending saves survive restarts: re-arm the retry alarm before serving anything (spec §7.3).
+    void ctx.blockConcurrencyWhile(() => this.results.rearm());
   }
 
   /** Test-only. Applied, and returns true, only when SUPABASE_URL is the local stack. */
   setTestOverrides(o: TestOverrides): boolean {
     if (!isLocalUrl(this.env.SUPABASE_URL)) return false;
     if (o.authDeadlineMs !== undefined) this.authDeadlineMs = o.authDeadlineMs;
+    if (o.resultsNow !== undefined) this.resultsNow = o.resultsNow;
     return true;
   }
 
@@ -330,8 +346,15 @@ export class WorldObject extends DurableObject<Env> {
 
   // ---- outgoing ----
 
-  /** After every engine call: outbox, then closings, then finished rounds, then the timer. */
+  /**
+   * After every engine call: finished rounds are stored durably first, so each pending row
+   * exists before its `game.finished` reaches any socket; then the outbox, the closings, the
+   * save attempts (not awaited), and the timer.
+   */
   private flush(): void {
+    const finished = this.world.takeFinishedRounds();
+    for (const r of finished) this.results.add(r);
+    if (finished.length > 0) void this.rearmResults();
     for (const { to, message } of this.world.takeOutbox()) {
       const conn = this.conns.get(to);
       if (conn) this.sendTo(conn, message);
@@ -343,16 +366,71 @@ export class WorldObject extends DurableObject<Env> {
       this.forget(conn);
       safeClose(conn.ws, CLOSE.normal, reason);
     }
-    const finished = this.world.takeFinishedRounds();
-    if (finished.length > 0) this.onFinished(finished);
+    for (const r of finished) void this.save(r);
     this.syncTicker();
   }
 
+  // ---- results ----
+
+  /** Retries every pending result that is due, then re-arms (or deletes) the alarm. */
+  override async alarm(): Promise<void> {
+    await Promise.all(this.results.due().map((r) => this.save(r)));
+    await this.rearmResults();
+  }
+
   /**
-   * Seam for Task 10: durable, exactly-once result saving replaces this placeholder.
-   * Until then finished rounds are dropped here.
+   * One attempt to save `round`. The unique session id makes repeats safe (spec §7.3 step 4);
+   * an attempt already in flight for the session is not duplicated.
    */
-  protected onFinished(_rounds: FinishedRound[]): void {}
+  private async save(round: FinishedRound): Promise<void> {
+    if (this.saving.has(round.sessionId)) return;
+    this.saving.add(round.sessionId);
+    try {
+      const r = await this.supabase.recordResult(round);
+      if (r.error) {
+        log('result.save_failed', { code: r.error.code });
+        const { failedStatusReached } = this.results.markFailed(round.sessionId);
+        if (failedStatusReached) {
+          this.toParticipants(round, {
+            type: 'game.finished',
+            payload: {
+              sessionId: round.sessionId,
+              outcome: round.outcome,
+              score: round.score,
+              persistenceStatus: 'failed',
+              ...(round.cancelReason ? { reason: round.cancelReason } : {}),
+            },
+          });
+        }
+      } else {
+        this.results.markSaved(round.sessionId);
+        this.toParticipants(round, {
+          type: 'result.saved',
+          payload: { sessionId: round.sessionId, resultId: r.data.resultId },
+        });
+      }
+    } finally {
+      this.saving.delete(round.sessionId);
+    }
+    await this.rearmResults();
+  }
+
+  private async rearmResults(): Promise<void> {
+    try {
+      await this.results.rearm();
+    } catch {
+      log('result.alarm_failed', { code: 'SERVICE_UNAVAILABLE' });
+    }
+  }
+
+  /** Sends to every admitted connection of the round's participants. */
+  private toParticipants(round: FinishedRound, message: ServerMessage): void {
+    for (const conn of this.conns.values()) {
+      if (conn.phase === 'admitted' && conn.playerId !== null && round.playerIds.includes(conn.playerId)) {
+        this.sendTo(conn, message);
+      }
+    }
+  }
 
   private syncTicker(): void {
     if (this.world.needsTimer()) {
