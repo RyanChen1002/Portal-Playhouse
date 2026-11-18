@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/17/2026 | Local setup now starts the stack with `npm run db:start`, which first generates the Git-ignored local signing keys. |
 | 0.2 | 11/15/2026 | Added frontend preview instructions and folder overview; clarified sample UI status and separate backend setup; consolidated history into one table. |
 | 0.1 | 11/14/2026 | Added the Local development section and hosted checklist link, and updated Project status to describe the added backend foundation and point to the hosted setup checklist. |
 
@@ -32,7 +33,7 @@ Commands:
 
 ```sh
 npm ci                     # install pinned dependencies
-npx supabase start         # start the local stack (first run pulls images)
+npm run db:start           # generate local signing keys if absent, then start the local stack (first run pulls images)
 npm run typecheck          # type check
 npm test                   # unit and contract tests
 npm run test:db            # database tests (pgTAP)

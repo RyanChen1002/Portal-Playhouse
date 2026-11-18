@@ -24,7 +24,7 @@ create table private.portal_partners_results (
   completed_at timestamptz not null,
   constraint portal_partners_results_session_id_key unique (session_id),
   constraint portal_partners_results_cancel_reason_rule
-    check ((outcome = 'cancelled') = (cancel_reason in ('left', 'disconnected'))),
+    check ((outcome = 'cancelled') = (cancel_reason is not null and cancel_reason in ('left', 'disconnected'))),
   constraint portal_partners_results_time_order check (completed_at >= started_at)
 );
 

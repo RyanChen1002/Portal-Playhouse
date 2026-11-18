@@ -3,7 +3,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(57);
+select plan(59);
 
 create function pg_temp.err(sql text)
 returns text
@@ -136,6 +136,16 @@ select is(pg_temp.err($$select public.record_portal_partners_result(null,
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'win', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'a null session id is rejected');
 select is((select count(*) from private.portal_partners_results), 1::bigint, 'rejected calls wrote nothing');
+
+-- The table's own check also rejects a NULL reason on a cancellation and a reason on a win.
+reset role;
+select throws_ok($$insert into private.portal_partners_results (session_id, outcome, cancel_reason, score, started_at, completed_at)
+  values ('00000000-0000-0000-0000-00000000c001', 'cancelled', null, 0, now(), now())$$,
+  '23514', null, 'table check: cancelled with a NULL reason is rejected');
+select throws_ok($$insert into private.portal_partners_results (session_id, outcome, cancel_reason, score, started_at, completed_at)
+  values ('00000000-0000-0000-0000-00000000c002', 'win', 'left', 0, now(), now())$$,
+  '23514', null, 'table check: a win with a reason is rejected');
+set local role service_role;
 
 -- ---------------------------------------------------------------------------
 -- winsTotal: A+B win twice (a001, a002), lose once (a003), cancel once (a004).
