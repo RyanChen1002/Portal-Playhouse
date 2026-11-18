@@ -48,10 +48,12 @@ describe('credentials', () => {
     expect(validateCredentials({ email: 'a@b.co', password: '12345678' })).toBeNull();
   });
 
-  it('lists the eight error codes', () => {
+  it('lists the fifteen error codes', () => {
     expect([...ERROR_CODES]).toEqual([
       'VALIDATION_ERROR', 'UNAUTHORIZED', 'DISPLAY_NAME_TAKEN', 'EMAIL_TAKEN',
       'INVALID_CREDENTIALS', 'WEAK_PASSWORD', 'RATE_LIMITED', 'SERVICE_UNAVAILABLE',
+      'ROOM_NOT_FOUND', 'ROOM_FULL', 'ROOM_LOCKED', 'WORLD_FULL',
+      'NOT_IN_GAME', 'INVALID_ACTION', 'GAME_NOT_READY',
     ]);
   });
 });

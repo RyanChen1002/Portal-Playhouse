@@ -7,6 +7,13 @@ export const ERROR_CODES = [
   'WEAK_PASSWORD',
   'RATE_LIMITED',
   'SERVICE_UNAVAILABLE',
+  'ROOM_NOT_FOUND',
+  'ROOM_FULL',
+  'ROOM_LOCKED',
+  'WORLD_FULL',
+  'NOT_IN_GAME',
+  'INVALID_ACTION',
+  'GAME_NOT_READY',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
