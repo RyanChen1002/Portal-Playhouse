@@ -1,14 +1,26 @@
-// Real PortalClient over supabase-js (spec §5.5). Same behavior as shared/mocks: same
-// validation, error codes and fields. It knows function names, never table names: profile
-// data goes only through rpc('get_me' | 'update_me' | 'check_display_name').
+// Real PortalClient over supabase-js (spec §5.5) and the runtime's WebSocket (spec §8.1).
+// Same behavior as shared/mocks: same validation, error codes and fields. It knows function
+// names, never table names: data goes only through
+// rpc('get_me' | 'update_me' | 'check_display_name' | 'get_my_results').
 // Every public method returns a Result and never throws.
 import { createClient } from '@supabase/supabase-js';
 import type { Session, SupabaseClient, SupportedStorage } from '@supabase/supabase-js';
 import { isAvatarId, validateCredentials, validateDisplayName } from '../contracts/index';
-import type { AppError, AvatarId, PortalClient, Profile, Result, SessionState } from '../contracts/index';
+import type {
+  AppError,
+  AvatarId,
+  GameResult,
+  PortalClient,
+  Profile,
+  Result,
+  SessionState,
+  WorldConnection,
+} from '../contracts/index';
 import { appError, mapAuthError, mapRpcError } from './errors';
+import { openWorldConnection, validateResultsQuery, type SocketLike } from './world';
 
 export { mapAuthError, mapRpcError } from './errors';
+export type { SocketLike, WorldTransport } from './world';
 
 export interface PortalClientConfig {
   url: string;
@@ -21,6 +33,16 @@ export interface PortalClientConfig {
   storage?: SupportedStorage;
   /** Storage key for the session. Defaults to a key unique to this instance. */
   storageKey?: string;
+  /** The runtime's WebSocket URL, including the `/connect` path. Without it, connectWorld fails. */
+  runtimeUrl?: string;
+  /** Opens a socket to `url`. Defaults to the global WebSocket; tests pass a fake. */
+  openSocket?: (url: string) => SocketLike;
+}
+
+function defaultOpenSocket(url: string): SocketLike {
+  const Ctor = (globalThis as { WebSocket?: new (url: string) => unknown }).WebSocket;
+  if (!Ctor) throw new Error('WebSocket is not available');
+  return new Ctor(url) as SocketLike;
 }
 
 /** A minimal synchronous in-memory SupportedStorage. */
@@ -111,6 +133,34 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
     return profile ? ok(profile) : fail('SERVICE_UNAVAILABLE');
   }
 
+  let world: WorldConnection | null = null;
+  let connecting: Promise<Result<WorldConnection>> | null = null;
+
+  async function accessToken(): Promise<string | null> {
+    const session = await currentSession();
+    return session.data?.access_token ?? null;
+  }
+
+  async function connectWorld(): Promise<Result<WorldConnection>> {
+    const url = config.runtimeUrl;
+    if (!url) return fail('SERVICE_UNAVAILABLE', undefined, 'The game server is not configured.');
+    if (world && world.state !== 'closed') return ok(world);
+    const session = await currentSession();
+    if (session.error) return failWith(session.error);
+    if (!session.data) return fail('UNAUTHORIZED');
+    const open = config.openSocket ?? defaultOpenSocket;
+    const r = await openWorldConnection({
+      openSocket: () => open(url),
+      getToken: accessToken,
+      refreshToken: async () => {
+        const { data, error } = await supabase.auth.refreshSession();
+        return error ? null : (data.session?.access_token ?? null);
+      },
+    });
+    if (r.data) world = r.data;
+    return r;
+  }
+
   return {
     signUp: (input) =>
       guard(async () => {
@@ -182,6 +232,8 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
 
     signOut: () =>
       guard(async () => {
+        // Leave the world first, so the slot is freed at once (spec §5.2 item 9).
+        if (world && world.state !== 'closed') await world.leaveWorld();
         // 'local' ends only this client's session, like the mock; other devices stay signed in.
         const { error } = await supabase.auth.signOut({ scope: 'local' });
         if (error) return failWith(mapAuthError(error));
@@ -268,7 +320,37 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
         if (error) return failWith(mapRpcError({ ...error, status }));
         return isAvailability(data) ? ok({ available: data.available }) : fail('SERVICE_UNAVAILABLE');
       }),
+
+    connectWorld: () =>
+      guard(() => {
+        // Concurrent calls share one attempt.
+        connecting ??= connectWorld().finally(() => {
+          connecting = null;
+        });
+        return connecting;
+      }),
+
+    getMyResults: (input) =>
+      guard(async () => {
+        const q = validateResultsQuery(input);
+        if (!q.ok) return failWith(q.error);
+        const session = await currentSession();
+        if (session.error) return failWith(session.error);
+        if (!session.data) return fail('UNAUTHORIZED');
+        const { data, error, status } = await supabase.rpc('get_my_results', {
+          result_limit: q.limit,
+          page_cursor: q.cursor,
+        });
+        if (error) return failWith(mapRpcError({ ...error, status }));
+        return isResultsPage(data) ? ok(data) : fail('SERVICE_UNAVAILABLE');
+      }),
   };
+}
+
+function isResultsPage(x: unknown): x is { results: GameResult[]; nextCursor: string | null } {
+  if (typeof x !== 'object' || x === null) return false;
+  const d = x as { results?: unknown; nextCursor?: unknown };
+  return Array.isArray(d.results) && (d.nextCursor === null || typeof d.nextCursor === 'string');
 }
 
 function isAvailability(x: unknown): x is { available: boolean } {

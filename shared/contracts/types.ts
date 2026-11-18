@@ -1,3 +1,13 @@
+import type {
+  GameResult,
+  PortalPartnersTarget,
+  RoomId,
+  RoomSnapshot,
+  ServerMessage,
+  Vec3,
+  WorldSnapshot,
+} from './realtime';
+
 export const ERROR_CODES = [
   'VALIDATION_ERROR',
   'UNAUTHORIZED',
@@ -48,13 +58,38 @@ export interface Profile {
   id: string;
   displayName: string;
   avatarId: AvatarId;
-  /** Always 0 in this milestone. */
+  /** One per winning session the player took part in. */
   winsTotal: number;
 }
 
 export interface SessionState {
   signedIn: boolean;
   playerId: string | null;
+}
+
+export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
+export type ServerEventType = Exclude<ServerMessage['type'], 'request.accepted' | 'request.error'>;
+export type ServerEventPayload<K extends ServerEventType> = Extract<ServerMessage, { type: K }>['payload'];
+
+/** A live connection to the shared world (spec §8.1). Methods never throw. */
+export interface WorldConnection {
+  readonly playerId: string;
+  readonly state: ConnectionState;
+  /** The latest world state, kept current from server events. Returns a copy. */
+  snapshot(): WorldSnapshot;
+  joinRoom(roomId: RoomId): Promise<Result<RoomSnapshot>>;
+  leaveRoom(): Promise<Result<RoomSnapshot>>;
+  setReady(ready: boolean): Promise<Result<null>>;
+  /** Fills in the current round's sessionId and a fresh actionId. */
+  interact(target: PortalPartnersTarget): Promise<Result<null>>;
+  /** Frees the slot at once; the connection is then closed. Also called by signOut(). */
+  leaveWorld(): Promise<Result<null>>;
+  /** Not awaited; the sequence number is managed internally. Ignored while not connected. */
+  sendMove(position: Vec3, rotation: number): void;
+  /** Returns an unsubscribe function. */
+  on<K extends ServerEventType>(type: K, cb: (p: ServerEventPayload<K>) => void): () => void;
+  /** Returns an unsubscribe function. */
+  onConnectionState(cb: (s: ConnectionState) => void): () => void;
 }
 
 export interface PortalClient {
@@ -67,4 +102,11 @@ export interface PortalClient {
   getMe(): Promise<Result<Profile>>;
   updateMe(input: { displayName?: string; avatarId?: AvatarId }): Promise<Result<Profile>>;
   checkDisplayName(displayName: string): Promise<Result<{ available: boolean }>>;
+  /** Opens the world connection; resolves after the first `world.snapshot`. */
+  connectWorld(): Promise<Result<WorldConnection>>;
+  /** The caller's results, newest first. `limit` 1 to 50, default 20. */
+  getMyResults(input?: {
+    limit?: number;
+    cursor?: string;
+  }): Promise<Result<{ results: GameResult[]; nextCursor: string | null }>>;
 }
