@@ -48,11 +48,13 @@ function b64url(value: unknown): string {
 
 let fetchCalls: string[];
 let verifier: TokenVerifier;
+let clock: number; // injected now(), ms
+let published: JWK[]; // the key set the fake Supabase serves
 
 const jwksFetch: typeof fetch = async (input) => {
   const url = input instanceof Request ? input.url : String(input);
   fetchCalls.push(url);
-  return new Response(JSON.stringify({ keys: [es256.publicJwk, rs256.publicJwk, es384.publicJwk] }), {
+  return new Response(JSON.stringify({ keys: published }), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
@@ -67,7 +69,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   fetchCalls = [];
-  verifier = createTokenVerifier({ supabaseUrl: SUPABASE_URL, fetch: jwksFetch, now: () => NOW_MS });
+  clock = NOW_MS;
+  published = [es256.publicJwk, rs256.publicJwk, es384.publicJwk];
+  verifier = createTokenVerifier({ supabaseUrl: SUPABASE_URL, fetch: jwksFetch, now: () => clock });
 });
 
 async function expectUnauthorized(token: string) {
@@ -78,10 +82,10 @@ async function expectUnauthorized(token: string) {
 }
 
 describe('createTokenVerifier', () => {
-  it('accepts a valid ES256 token and returns the player ID and expiry in ms', async () => {
+  it('accepts a valid ES256 token and returns the player ID and the effective deadline (exp + 30 s) in ms', async () => {
     const exp = NOW_S + 1800;
     const result = await verifier.verify(await signEs256(claims({ exp })));
-    expect(result).toEqual({ data: { playerId: SUB, expiresAt: exp * 1000 }, error: null });
+    expect(result).toEqual({ data: { playerId: SUB, expiresAt: (exp + 30) * 1000 }, error: null });
     expect(fetchCalls).toEqual([JWKS_URL]);
   });
 
@@ -94,6 +98,7 @@ describe('createTokenVerifier', () => {
   it('accepts a token expired by 29 s (clock tolerance)', async () => {
     const result = await verifier.verify(await signEs256(claims({ exp: NOW_S - 29 })));
     expect(result.data?.playerId).toBe(SUB);
+    expect(result.data!.expiresAt - clock).toBe(1000);
   });
 
   it('rejects every bad token with UNAUTHORIZED and the same message', async () => {
@@ -155,5 +160,62 @@ describe('createTokenVerifier', () => {
     }
     expect(fetchCalls.length - 1).toBeLessThanOrEqual(1);
     expect(fetchCalls.every((url) => url === JWKS_URL)).toBe(true);
+  });
+
+  it('makes at most one fetch for 10 concurrent unknown-kid tokens', async () => {
+    expect((await verifier.verify(await signEs256())).data?.playerId).toBe(SUB);
+    clock += 61_000;
+    const tokens = await Promise.all(
+      Array.from({ length: 10 }, (_, i) => sign(claims(), stranger.privateKey, { alg: 'ES256', kid: `unknown-${i}` })),
+    );
+    const results = await Promise.all(tokens.map((t) => verifier.verify(t)));
+    expect(results.every((r) => r.error?.code === 'UNAUTHORIZED')).toBe(true);
+    expect(fetchCalls).toHaveLength(2);
+  });
+
+  it('makes 10 concurrent first verifies share one initial fetch', async () => {
+    const token = await signEs256();
+    const results = await Promise.all(Array.from({ length: 10 }, () => verifier.verify(token)));
+    expect(results.every((r) => r.data?.playerId === SUB)).toBe(true);
+    expect(fetchCalls).toHaveLength(1);
+  });
+
+  it('fetches at most once per 60 s window while the key set cannot be fetched', async () => {
+    let attempts = 0;
+    const failing = createTokenVerifier({
+      supabaseUrl: SUPABASE_URL,
+      fetch: async () => {
+        attempts += 1;
+        return new Response('unavailable', { status: 503 });
+      },
+      now: () => clock,
+    });
+    const token = await signEs256();
+    for (let i = 0; i < 5; i += 1) expect((await failing.verify(token)).error?.code).toBe('UNAUTHORIZED');
+    expect(attempts).toBe(1);
+    clock += 59_999;
+    for (let i = 0; i < 5; i += 1) await failing.verify(token);
+    expect(attempts).toBe(1);
+    clock += 1;
+    for (let i = 0; i < 5; i += 1) await failing.verify(token);
+    expect(attempts).toBe(2);
+  });
+
+  it('accepts a rotated-in key on the first unknown-kid token after 60 s', async () => {
+    published = [es256.publicJwk];
+    expect((await verifier.verify(await signEs256())).data?.playerId).toBe(SUB);
+    expect(fetchCalls).toHaveLength(1);
+
+    const rotated = await makeKey('ES256', 'es-key-2');
+    published = [es256.publicJwk, rotated.publicJwk];
+    const token = await sign(claims({ exp: NOW_S + 7200 }), rotated.privateKey, { alg: 'ES256', kid: 'es-key-2' });
+
+    clock += 30_000;
+    await expectUnauthorized(token);
+    expect(fetchCalls).toHaveLength(1);
+
+    clock += 30_000;
+    expect((await verifier.verify(token)).data?.playerId).toBe(SUB);
+    expect(fetchCalls).toHaveLength(2);
   });
 });
