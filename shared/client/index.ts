@@ -144,9 +144,15 @@ export function createPortalClient(config: PortalClientConfig): PortalClient {
   async function connectWorld(): Promise<Result<WorldConnection>> {
     const url = config.runtimeUrl;
     if (!url) return fail('SERVICE_UNAVAILABLE', undefined, 'The game server is not configured.');
-    if (world && world.state !== 'closed') return ok(world);
     const session = await currentSession();
     if (session.error) return failWith(session.error);
+    const playerId = session.data?.user?.id ?? null;
+    if (world && world.state !== 'closed') {
+      // Only ever hand back a connection that belongs to the signed-in player.
+      if (world.playerId === playerId) return ok(world);
+      await world.leaveWorld();
+    }
+    world = null;
     if (!session.data) return fail('UNAUTHORIZED');
     const open = config.openSocket ?? defaultOpenSocket;
     const r = await openWorldConnection({

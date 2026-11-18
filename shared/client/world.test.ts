@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Result, ServerMessage, WorldConnection, WorldSnapshot } from '../contracts/index';
-import { createPortalClient } from './index';
-import { openWorldConnection, RECONNECT_DELAYS_MS, tokenExpiry, type SocketLike, type WorldTransport } from './world';
+import { createMemoryStorage, createPortalClient } from './index';
+import {
+  MOVE_INTERVAL_MS,
+  openWorldConnection,
+  RECONNECT_DELAYS_MS,
+  tokenExpiry,
+  type SocketLike,
+  type WorldTransport,
+} from './world';
 
 class FakeSocket implements SocketLike {
   onopen: (() => void) | null = null;
@@ -9,10 +16,12 @@ class FakeSocket implements SocketLike {
   onclose: ((ev: { code: number; reason: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   sent: Array<{ type: string; requestId?: string; payload: Record<string, unknown> }> = [];
+  sentAt: number[] = [];
   closedByClient: number | null = null;
 
   send(data: string) {
     this.sent.push(JSON.parse(data));
+    this.sentAt.push(Date.now());
   }
   close(code = 1005) {
     this.closedByClient = code;
@@ -36,9 +45,9 @@ class FakeSocket implements SocketLike {
 const jwt = (claims: Record<string, unknown>) =>
   `h.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.sig`;
 
-function snapshot(revision = 1): WorldSnapshot {
+function snapshot(revision = 1, playerId = 'p1'): WorldSnapshot {
   return {
-    self: { playerId: 'p1', roomId: 'lobby', position: { x: 0, y: 0, z: 4 }, rotation: 0 },
+    self: { playerId, roomId: 'lobby', position: { x: 0, y: 0, z: 4 }, rotation: 0 },
     room: {
       roomId: 'lobby',
       summary: null,
@@ -186,6 +195,46 @@ describe('world connection', () => {
     });
   }
 
+  it('a 1000 close with any other reason reconnects on the schedule', async () => {
+    const h = harness();
+    const conn = await connected(h);
+    h.sockets[0]!.serverClose(1000, '');
+    expect(conn.state).toBe('reconnecting');
+    await tick(499);
+    expect(h.sockets).toHaveLength(1);
+    await tick(1);
+    expect(h.sockets).toHaveLength(2);
+    admitLatest(h);
+    expect(conn.state).toBe('connected');
+  });
+
+  it('throttles moves to 20 per second and always sends the latest position', async () => {
+    const h = harness();
+    const conn = await connected(h);
+    const s = h.sockets[0]!;
+    const moves = () => s.sent.filter((m) => m.type === 'player.move');
+    const start = Date.now();
+    let last = { x: 0, y: 0, z: 4 };
+    for (let i = 1; i <= 60; i++) {
+      last = { x: i * 0.01, y: 0, z: 4 };
+      conn.sendMove(last, 0);
+      if (i < 60) await tick(16); // 60 calls within 944 ms
+    }
+    expect(Date.now() - start).toBeLessThan(1000);
+    const within = moves().length;
+    expect(within).toBeLessThanOrEqual(20);
+    await tick(MOVE_INTERVAL_MS);
+    const all = moves();
+    expect(all.length).toBeLessThanOrEqual(within + 1);
+    expect(all.at(-1)?.payload).toMatchObject({ position: last });
+    // Sequences still increase by one per send.
+    expect(all.map((m) => m.payload.sequence)).toEqual(all.map((_, i) => i + 1));
+    expect(conn.snapshot().self.position).toEqual(last);
+    // No more than 20 sends in any 1 s window.
+    const times = s.sentAt.filter((_, i) => s.sent[i]!.type === 'player.move');
+    for (const t of times) expect(times.filter((u) => u >= t && u < t + 1000).length).toBeLessThanOrEqual(20);
+  });
+
   it('WORLD_FULL on the first connection resolves with the error and does not retry', async () => {
     const h = harness();
     const pending = openWorldConnection(h.transport);
@@ -326,5 +375,92 @@ describe('createPortalClient world methods', () => {
     expect((await client.getMyResults()).error?.code).toBe('UNAUTHORIZED');
     expect((await client.getMyResults({ limit: 0 })).error?.code).toBe('VALIDATION_ERROR');
     expect((await client.getMyResults({ limit: 51 })).error?.code).toBe('VALIDATION_ERROR');
+  });
+});
+
+describe('createPortalClient connectWorld identity', () => {
+  /** Stores a signed-in session the way supabase-js keeps it, valid for an hour. */
+  function seed(storage: ReturnType<typeof createMemoryStorage>, key: string, userId: string | null) {
+    if (userId === null) {
+      storage.removeItem(key);
+      return;
+    }
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    storage.setItem(
+      key,
+      JSON.stringify({
+        access_token: jwt({ sub: userId, exp: expiresAt }),
+        refresh_token: `refresh-${userId}`,
+        token_type: 'bearer',
+        expires_in: 3600,
+        expires_at: expiresAt,
+        user: { id: userId, aud: 'authenticated', role: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: '' },
+      }),
+    );
+  }
+
+  async function until(predicate: () => boolean) {
+    const deadline = Date.now() + 2000;
+    while (!predicate()) {
+      if (Date.now() > deadline) throw new Error('timed out');
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  }
+
+  it('never hands back a connection that belongs to another player', async () => {
+    const storage = createMemoryStorage();
+    const key = 'identity-test';
+    const sockets: FakeSocket[] = [];
+    const client = createPortalClient({
+      url: 'http://127.0.0.1:1',
+      publishableKey: 'k',
+      storage,
+      storageKey: key,
+      runtimeUrl: 'ws://127.0.0.1:2/connect',
+      openSocket: () => {
+        const s = new FakeSocket();
+        sockets.push(s);
+        return s;
+      },
+    });
+
+    /** Connects, admitting the next socket as `playerId`. */
+    async function connectAs(playerId: string) {
+      const before = sockets.length;
+      const pending = client.connectWorld();
+      await until(() => sockets.length > before);
+      const s = sockets[sockets.length - 1]!;
+      s.open();
+      expect(s.sent[0]).toMatchObject({ type: 'auth' });
+      expect(tokenExpiry(String(s.sent[0]!.payload.token))).not.toBeNull();
+      s.push({ type: 'world.snapshot', payload: snapshot(1, playerId) });
+      return (await pending).data!;
+    }
+
+    seed(storage, key, 'user-a');
+    const a = await connectAs('user-a');
+    expect(a.playerId).toBe('user-a');
+    // Same player: the open connection is returned, no new socket.
+    expect((await client.connectWorld()).data).toBe(a);
+    expect(sockets).toHaveLength(1);
+
+    // Another player signed in on this client: a is left first, then a new connection opens.
+    seed(storage, key, 'user-b');
+    const pendingB = connectAs('user-b');
+    await until(() => sockets[0]!.sent.some((m) => m.type === 'world.leave'));
+    sockets[0]!.push({ type: 'request.accepted', requestId: sockets[0]!.lastRequestId('world.leave'), payload: null });
+    const b = await pendingB;
+    expect(a.state).toBe('closed');
+    expect(b.playerId).toBe('user-b');
+    expect(sockets).toHaveLength(2);
+
+    // Signed out: the open connection is left and connectWorld is UNAUTHORIZED.
+    seed(storage, key, null);
+    const signedOut = client.connectWorld();
+    await until(() => sockets[1]!.sent.some((m) => m.type === 'world.leave'));
+    sockets[1]!.push({ type: 'request.accepted', requestId: sockets[1]!.lastRequestId('world.leave'), payload: null });
+    expect((await signedOut).error?.code).toBe('UNAUTHORIZED');
+    expect(b.state).toBe('closed');
+    expect(sockets).toHaveLength(2);
   });
 });

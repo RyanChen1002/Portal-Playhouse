@@ -56,6 +56,25 @@ describe('mock world extras', () => {
     );
   });
 
+  it('connectWorld never returns another player’s connection', async () => {
+    const client = await newSignedInClient();
+    const a = (await client.connectWorld()).data!;
+    expect((await client.connectWorld()).data).toBe(a);
+
+    // Sign in as someone else on the same client without signing out first.
+    const name = token();
+    const other = createMockPortalClient({ store });
+    await other.signUp({ email: `${name}@example.test`, password: TEST_PASSWORD, displayName: name });
+    const otherId = (await other.getMe()).data!.id;
+    expect((await client.signIn({ email: `${name}@example.test`, password: TEST_PASSWORD })).error).toBeNull();
+
+    const b = (await client.connectWorld()).data!;
+    open.push(b);
+    expect(b).not.toBe(a);
+    expect(b.playerId).toBe(otherId);
+    expect(a.state).toBe('closed');
+  });
+
   it('connectWorld when signed out is UNAUTHORIZED', async () => {
     const client = createMockPortalClient({ store });
     const r = await client.connectWorld();

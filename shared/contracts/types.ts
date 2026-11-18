@@ -75,7 +75,11 @@ export type ServerEventPayload<K extends ServerEventType> = Extract<ServerMessag
 export interface WorldConnection {
   readonly playerId: string;
   readonly state: ConnectionState;
-  /** The latest world state, kept current from server events. Returns a copy. */
+  /**
+   * The latest world state, kept current from server events. Returns a copy.
+   * `self.position` is the last position this client sent (the server does not echo moves);
+   * it is overwritten by `player.corrected` and by server snapshots.
+   */
   snapshot(): WorldSnapshot;
   joinRoom(roomId: RoomId): Promise<Result<RoomSnapshot>>;
   leaveRoom(): Promise<Result<RoomSnapshot>>;
@@ -84,7 +88,11 @@ export interface WorldConnection {
   interact(target: PortalPartnersTarget): Promise<Result<null>>;
   /** Frees the slot at once; the connection is then closed. Also called by signOut(). */
   leaveWorld(): Promise<Result<null>>;
-  /** Not awaited; the sequence number is managed internally. Ignored while not connected. */
+  /**
+   * Not awaited; the sequence number is managed internally. Ignored while not connected.
+   * Throttled to at most 20 sends per second; extra calls replace a held-back latest position,
+   * which is sent when the next slot opens.
+   */
   sendMove(position: Vec3, rotation: number): void;
   /** Returns an unsubscribe function. */
   on<K extends ServerEventType>(type: K, cb: (p: ServerEventPayload<K>) => void): () => void;
@@ -102,7 +110,12 @@ export interface PortalClient {
   getMe(): Promise<Result<Profile>>;
   updateMe(input: { displayName?: string; avatarId?: AvatarId }): Promise<Result<Profile>>;
   checkDisplayName(displayName: string): Promise<Result<{ available: boolean }>>;
-  /** Opens the world connection; resolves after the first `world.snapshot`. */
+  /**
+   * Opens the world connection; resolves after the first `world.snapshot`. Returns the open
+   * connection if it belongs to the signed-in player (one for another player is left first).
+   * A failed first connect is not retried automatically: the UI should offer "try again".
+   * Reconnects after a drop are automatic.
+   */
   connectWorld(): Promise<Result<WorldConnection>>;
   /** The caller's results, newest first. `limit` 1 to 50, default 20. */
   getMyResults(input?: {

@@ -113,7 +113,13 @@ export function createMockPortalClient(options: { store?: MockStore } = {}): Por
   let connecting: Promise<Result<WorldConnection>> | null = null;
 
   async function connect(): Promise<Result<WorldConnection>> {
-    if (world && world.state !== 'closed') return ok(world);
+    if (world && world.state !== 'closed') {
+      // Only ever hand back a connection that belongs to the signed-in player.
+      if (world.playerId === currentId) return ok(world);
+      await world.leaveWorld();
+    }
+    world = null;
+    if (currentId === null) return fail('UNAUTHORIZED', UNAUTHORIZED_MESSAGE);
     const r = await openWorldConnection({
       openSocket: () => openMockSocket(store),
       // A mock token is the player id.
@@ -253,7 +259,6 @@ export function createMockPortalClient(options: { store?: MockStore } = {}): Por
     },
 
     async connectWorld() {
-      if (currentId === null) return fail('UNAUTHORIZED', UNAUTHORIZED_MESSAGE);
       // Concurrent calls share one attempt.
       connecting ??= connect().finally(() => {
         connecting = null;

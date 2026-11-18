@@ -4,10 +4,12 @@
 //
 // Protocol rules followed here:
 // - The first message is `auth {token}`; nothing else is sent until `world.snapshot` arrives.
-// - Close codes: 1000 (session.replaced / idle / left), 4409 WORLD_FULL and 4400 (abuse) are
-//   final. 4401 refreshes the session once per outage and retries. 4503 and abnormal closes
+// - Close codes: 1000 with reason session.replaced / idle / left, 4409 WORLD_FULL and 4400
+//   (abuse) are final; any other 1000 reconnects. 4401 refreshes the session once per outage and retries. 4503 and abnormal closes
 //   retry at 0.5, 1, 2, 4 and 8 s (15.5 s in all, inside the 20 s grace), then give up.
 // - `auth.refresh` is sent 60 s before the access token's `exp`.
+// - Moves are throttled to at most 20 sends per second; the latest held-back position is sent
+//   when the next slot opens.
 // - Requests are matched by requestId and time out after 10 s with SERVICE_UNAVAILABLE.
 import { ERROR_CODES } from '../contracts/index';
 import type {
@@ -52,6 +54,10 @@ export const REQUEST_TIMEOUT_MS = 10_000;
 export const REFRESH_LEAD_MS = 60_000;
 /** Lower bound between refreshes, so a very short-lived token cannot cause a tight loop. */
 const MIN_REFRESH_DELAY_MS = 1_000;
+/** At most 20 moves per second (the runtime drops more): one send per 50 ms. */
+export const MOVE_INTERVAL_MS = 50;
+/** 1000 closes with these reasons end the connection; any other 1000 reconnects. */
+const FINAL_NORMAL_REASONS: readonly string[] = ['session.replaced', 'idle', 'left'];
 
 /** Close codes used by the runtime (runtime/src/world-object.ts). */
 export const CLOSE_CODES = {
@@ -169,6 +175,9 @@ class Connection implements WorldConnection {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private authTimer: ReturnType<typeof setTimeout> | null = null;
+  private moveTimer: ReturnType<typeof setTimeout> | null = null;
+  private heldMove: { at: Vec3; rotation: number } | null = null;
+  private lastMoveAt = Number.NEGATIVE_INFINITY;
   private readonly pending = new Map<string, Pending>();
   private moveSequence = 0;
   private readonly listeners = new Map<ServerEventType, Set<Listener>>();
@@ -251,13 +260,35 @@ class Connection implements WorldConnection {
 
   sendMove(position: Vec3, rotation: number): void {
     try {
+      if (!this.ws || !this.admitted || this.current !== 'connected' || !this.snap?.self.position) return;
+      if (!isVec3(position) || typeof rotation !== 'number' || !Number.isFinite(rotation)) return;
+      const at = { x: position.x, y: position.y, z: position.z };
+      const wait = this.lastMoveAt + MOVE_INTERVAL_MS - Date.now();
+      if (wait <= 0 && this.moveTimer === null) {
+        this.transmitMove(at, rotation);
+        return;
+      }
+      // Throttled: keep only the latest position and send it when the next slot opens.
+      this.heldMove = { at, rotation };
+      this.moveTimer ??= setTimeout(() => {
+        this.moveTimer = null;
+        const held = this.heldMove;
+        this.heldMove = null;
+        if (held) this.transmitMove(held.at, held.rotation);
+      }, Math.max(0, wait));
+    } catch {
+      // Never throw.
+    }
+  }
+
+  private transmitMove(at: Vec3, rotation: number): void {
+    try {
       const ws = this.ws;
       const snap = this.snap;
       if (!ws || !this.admitted || this.current !== 'connected' || !snap?.self.position) return;
-      if (!isVec3(position) || typeof rotation !== 'number' || !Number.isFinite(rotation)) return;
-      const at = { x: position.x, y: position.y, z: position.z };
       this.raw(ws, { type: 'player.move', payload: { sequence: ++this.moveSequence, position: at, rotation } });
-      // The server does not echo accepted moves: keep our own position current here.
+      this.lastMoveAt = Date.now();
+      // The server does not echo accepted moves: our own position is the last one sent.
       snap.self.position = { ...at };
       snap.self.rotation = rotation;
       const me = snap.room.players.find((p) => p.id === this.playerId);
@@ -312,7 +343,7 @@ class Connection implements WorldConnection {
     try {
       ws = this.transport.openSocket();
     } catch {
-      this.dropped(1006);
+      this.dropped(1006, '');
       return;
     }
     this.ws = ws;
@@ -328,7 +359,7 @@ class Connection implements WorldConnection {
       if (this.ws === ws) this.receive(ev?.data);
     };
     ws.onclose = (ev) => {
-      if (this.ws === ws) this.dropped(typeof ev?.code === 'number' ? ev.code : 1006);
+      if (this.ws === ws) this.dropped(typeof ev?.code === 'number' ? ev.code : 1006, typeof ev?.reason === 'string' ? ev.reason : '');
     };
     ws.onerror = () => {
       // A close event always follows.
@@ -336,22 +367,25 @@ class Connection implements WorldConnection {
     this.authTimer = setTimeout(() => {
       if (this.ws !== ws || this.admitted) return;
       this.detach(ws);
-      this.dropped(CLOSE_CODES.unavailable);
+      this.dropped(CLOSE_CODES.unavailable, '');
     }, REQUEST_TIMEOUT_MS);
   }
 
   /** The current socket closed (or never opened). Decides between retrying and giving up. */
-  private dropped(code: number): void {
+  private dropped(code: number, reason: string): void {
     const err = this.authError ?? closeError(code);
     this.ws = null;
     this.admitted = false;
     this.authError = null;
     this.clearTimer('authTimer');
     this.clearTimer('refreshTimer');
+    this.clearTimer('moveTimer');
+    this.heldMove = null;
     this.failPending();
     if (this.final) return;
 
-    if (code === CLOSE_CODES.normal || code === CLOSE_CODES.worldFull || code === CLOSE_CODES.invalid) {
+    const finalNormal = code === CLOSE_CODES.normal && FINAL_NORMAL_REASONS.includes(reason);
+    if (finalNormal || code === CLOSE_CODES.worldFull || code === CLOSE_CODES.invalid) {
       this.finish(err);
       return;
     }
@@ -402,6 +436,8 @@ class Connection implements WorldConnection {
     this.clearTimer('retryTimer');
     this.clearTimer('refreshTimer');
     this.clearTimer('authTimer');
+    this.clearTimer('moveTimer');
+    this.heldMove = null;
     this.failPending();
     const ws = this.ws;
     this.ws = null;
@@ -712,7 +748,7 @@ class Connection implements WorldConnection {
     }
   }
 
-  private clearTimer(name: 'retryTimer' | 'refreshTimer' | 'authTimer'): void {
+  private clearTimer(name: 'retryTimer' | 'refreshTimer' | 'authTimer' | 'moveTimer'): void {
     const t = this[name];
     if (t !== null) clearTimeout(t);
     this[name] = null;
