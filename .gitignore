@@ -30,3 +30,7 @@ __pycache__/
 supabase/.temp/
 supabase/.branches/
 supabase/signing_keys.json
+
+# Cloudflare Workers local state and secrets
+runtime/.dev.vars
+.wrangler/
