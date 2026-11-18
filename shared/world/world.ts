@@ -275,7 +275,7 @@ export class World {
     remove(lobby.members, p.card.id);
     lobby.revision++;
     room.members.push(p.card.id);
-    this.resetReady(room);
+    const cleared = this.resetReady(room);
     room.revision++;
     p.roomId = room.id;
     p.position = null;
@@ -283,6 +283,7 @@ export class World {
 
     this.toRoom(lobby, { type: 'player.left', payload: { playerId: p.card.id, reason: 'moved', revision: lobby.revision } });
     this.toRoom(room, { type: 'player.joined', payload: { player: presence(p), revision: room.revision } }, p.card.id);
+    this.announceReset(room, cleared);
     this.reply(p, requestId, this.roomSnapshot(room));
     this.broadcastBoard(room);
     return null;
@@ -293,7 +294,7 @@ export class World {
     if (!room.config) return { code: 'INVALID_ACTION' as const, message: 'You are not in a game room.' };
 
     remove(room.members, p.card.id);
-    this.resetReady(room);
+    const cleared = this.resetReady(room);
     room.revision++;
     const lobby = this.lobby();
     const entrance = { ...room.config.entrance };
@@ -305,6 +306,7 @@ export class World {
     p.ready = false;
 
     this.toRoom(room, { type: 'player.left', payload: { playerId: p.card.id, reason: 'moved', revision: room.revision } });
+    this.announceReset(room, cleared);
     this.toRoom(lobby, { type: 'player.joined', payload: { player: presence(p), revision: lobby.revision } }, p.card.id);
     this.reply(p, requestId, this.roomSnapshot(lobby));
     this.broadcastBoard(room);
@@ -319,7 +321,7 @@ export class World {
     if (p.ready !== ready) {
       p.ready = ready;
       room.revision++;
-      this.toRoom(room, { type: 'player.ready', payload: { playerId: p.card.id, ready, revision: room.revision } }, p.card.id);
+      this.toRoom(room, { type: 'player.ready', payload: { playerId: p.card.id, ready, revision: room.revision } });
     }
     this.reply(p, requestId, null);
     return null;
@@ -340,10 +342,11 @@ export class World {
   private removePlayer(p: PlayerState, reason: 'left' | 'disconnected' | 'idle'): void {
     const room = this.roomOf(p);
     remove(room.members, p.card.id);
-    if (room.config) this.resetReady(room);
+    const cleared = room.config ? this.resetReady(room) : [];
     room.revision++;
     this.players.delete(p.card.id);
     this.toRoom(room, { type: 'player.left', payload: { playerId: p.card.id, reason, revision: room.revision } });
+    this.announceReset(room, cleared);
     if (room.config) this.broadcastBoard(room);
   }
 
@@ -359,10 +362,23 @@ export class World {
     return this.rooms.get(p.roomId)!;
   }
 
-  private resetReady(room: RoomState): void {
+  /** Clears every member's ready flag; returns the ids whose flag was actually cleared. */
+  private resetReady(room: RoomState): string[] {
+    const cleared: string[] = [];
     for (const id of room.members) {
       const m = this.players.get(id);
-      if (m) m.ready = false;
+      if (m?.ready) {
+        m.ready = false;
+        cleared.push(id);
+      }
+    }
+    return cleared;
+  }
+
+  /** Announces readiness resets to the whole room, at the room's current revision. */
+  private announceReset(room: RoomState, cleared: string[]): void {
+    for (const playerId of cleared) {
+      this.toRoom(room, { type: 'player.ready', payload: { playerId, ready: false, revision: room.revision } });
     }
   }
 

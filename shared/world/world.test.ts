@@ -295,13 +295,26 @@ describe('World', () => {
     ready(tw, 1);
     const reply = tw.messagesFor(conn(1));
     expect(lastReply(reply)).toEqual({ type: 'request.accepted', requestId: 'r1', payload: null });
+    // player.ready goes to the whole room, sender included, with the same revision.
+    const own = only(reply, 'player.ready');
+    expect(own).toHaveLength(1);
+    expect(own[0]!.payload).toMatchObject({ playerId: 'p1', ready: true });
     const seen = only(tw.messagesFor(conn(2)), 'player.ready');
-    expect(seen).toHaveLength(1);
-    expect(seen[0]!.payload).toMatchObject({ playerId: 'p1', ready: true });
+    expect(seen).toEqual(own);
     expect(tw.messagesFor(conn(3))).toEqual([]);
 
-    // Someone leaves: readiness resets for everyone in the room (seen through a fresh snapshot).
+    // Someone leaves: readiness resets for everyone in the room and is announced after the leave.
     leave(tw, 2);
+    const afterLeave = tw.messagesFor(conn(1)).filter((m) => m.type !== 'room.updated');
+    expect(afterLeave.map((m) => m.type)).toEqual(['player.left', 'player.ready']);
+    const left = only(afterLeave, 'player.left')[0]!;
+    expect(only(afterLeave, 'player.ready')[0]!.payload).toEqual({
+      playerId: 'p1',
+      ready: false,
+      revision: left.payload.revision,
+    });
+    // The leaver's own flag was already false, so nothing is announced for them.
+    expect(only(tw.messagesFor(conn(2)), 'player.ready')).toEqual([]);
     tw.world.admit('c1b', card(1));
     const fresh = tw.messagesFor('c1b')[0];
     if (fresh?.type !== 'world.snapshot') throw new Error('expected world.snapshot');
@@ -312,18 +325,30 @@ describe('World', () => {
     tw.clear();
     tw.advanceBy(100);
     join(tw, 2);
-    const snap = lastReply(tw.messagesFor(conn(2)));
+    const joinerMsgs = tw.messagesFor(conn(2));
+    const snap = lastReply(joinerMsgs);
     if (snap?.type !== 'request.accepted') throw new Error('expected request.accepted');
-    expect((snap.payload as RoomSnapshot).players.map((p) => p.ready)).toEqual([false, false]);
+    const roomSnap = snap.payload as RoomSnapshot;
+    expect(roomSnap.players.map((p) => p.ready)).toEqual([false, false]);
+    const resetEvent = { type: 'player.ready', payload: { playerId: 'p1', ready: false, revision: roomSnap.revision } };
+    expect(only(joinerMsgs, 'player.ready')).toEqual([resetEvent]);
+    const stayer = tw.messagesFor('c1b').filter((m) => m.type !== 'room.updated');
+    expect(stayer.map((m) => m.type)).toEqual(['player.joined', 'player.ready']);
+    expect(stayer[1]).toEqual(resetEvent);
+
+    // Nobody is ready now: a leave resets nothing and announces nothing.
+    leave(tw, 2);
+    expect(only(tw.messagesFor('c1b'), 'player.ready')).toEqual([]);
 
     // Outside a waiting room again after leaving.
-    leave(tw, 2);
     ready(tw, 2);
     expect(errorCode(tw.messagesFor(conn(2)))).toBe('GAME_NOT_READY');
   });
 
   it('world.leave frees the slot at once', () => {
     const tw = setup(16, [1, 2]);
+    ready(tw, 2);
+    tw.clear();
     tw.world.handle(conn(1), { type: 'world.leave', requestId: 'w1', payload: {} });
 
     expect(tw.messagesFor(conn(1))).toEqual([{ type: 'request.accepted', requestId: 'w1', payload: null }]);
@@ -331,7 +356,11 @@ describe('World', () => {
     expect(tw.world.slotsUsed()).toBe(15);
 
     const roommate = tw.messagesFor(conn(2));
-    expect(only(roommate, 'player.left')[0]!.payload).toMatchObject({ playerId: 'p1', reason: 'left' });
+    const leftEvt = only(roommate, 'player.left')[0]!;
+    expect(leftEvt.payload).toMatchObject({ playerId: 'p1', reason: 'left' });
+    expect(only(roommate, 'player.ready').map((m) => m.payload)).toEqual([
+      { playerId: 'p2', ready: false, revision: leftEvt.payload.revision },
+    ]);
     expect(boards(roommate)[0]!.players).toEqual([card(2)]);
     const lobby = tw.messagesFor(conn(3));
     expect(only(lobby, 'player.left')).toEqual([]);
