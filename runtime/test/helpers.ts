@@ -7,6 +7,8 @@ export const SUPABASE_URL = 'http://127.0.0.1:54321';
 export const ISSUER = `${SUPABASE_URL}/auth/v1`;
 export const JWKS_URL = `${ISSUER}/.well-known/jwks.json`;
 export const ALLOWED_ORIGIN = 'http://127.0.0.1:4173';
+/** Must match the SUPABASE_SECRET_KEY binding in vitest.config.ts. */
+export const SECRET_KEY = 'test-secret-key';
 
 // ---- tokens ----
 
@@ -98,6 +100,10 @@ export async function installFakeSupabase(): Promise<FakeSupabase> {
       const body: unknown = await req.json();
       fake.rpcCalls.push({ url: req.url, headers: req.headers, body });
       if (fake.down) throw new TypeError('fetch failed');
+      // Like the local gateway: an unknown API key is rejected before the database is reached.
+      if (req.headers.get('apikey') !== SECRET_KEY) {
+        return Response.json({ message: 'Invalid API key' }, { status: 401 });
+      }
       if (req.url.endsWith('/get_runtime_profile')) {
         const id = (body as { player_id?: string }).player_id ?? '';
         const card = fake.profiles.get(id);

@@ -3,7 +3,7 @@ import { env, exports } from 'cloudflare:workers';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerMessage } from '../../shared/contracts';
 import type { World } from '../../shared/world';
-import { isLocalUrl, type WorldObject } from '../src/world-object';
+import { isLocalUrl, testVarsFrom, type WorldObject } from '../src/world-object';
 import {
   ALLOWED_ORIGIN,
   card,
@@ -116,6 +116,24 @@ describe('authentication', () => {
     expect(isLocalUrl('https://abc.supabase.co')).toBe(false);
     expect(isLocalUrl('https://127.0.0.1.evil.example')).toBe(false);
     expect(isLocalUrl('not a url')).toBe(false);
+  });
+
+  it('reads ROUND_MS and TEST_RESULT_SAVE_FAILURES only for a local Supabase URL', () => {
+    const local = 'http://127.0.0.1:54321';
+    expect(testVarsFrom({ SUPABASE_URL: local })).toEqual({ roundMs: null, resultSaveFailures: 0 });
+    expect(testVarsFrom({ SUPABASE_URL: local, ROUND_MS: '3000', TEST_RESULT_SAVE_FAILURES: '2' })).toEqual({
+      roundMs: 3000,
+      resultSaveFailures: 2,
+    });
+    expect(
+      testVarsFrom({ SUPABASE_URL: 'https://abc.supabase.co', ROUND_MS: '3000', TEST_RESULT_SAVE_FAILURES: '2' }),
+    ).toEqual({ roundMs: null, resultSaveFailures: 0 });
+    for (const bad of ['0', '-5', '2.5', 'abc', '']) {
+      expect(testVarsFrom({ SUPABASE_URL: local, ROUND_MS: bad, TEST_RESULT_SAVE_FAILURES: bad })).toEqual({
+        roundMs: null,
+        resultSaveFailures: 0,
+      });
+    }
   });
 
   it('a non-auth first message gives UNAUTHORIZED and closes', async () => {

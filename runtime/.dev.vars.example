@@ -1,3 +1,9 @@
-# Copy to runtime/.dev.vars (Git-ignored) and fill in the local Supabase secret key
-# printed by `supabase status`. Never commit real values.
+# Copy to runtime/.dev.vars (Git-ignored) for `npm run runtime:dev`, and fill in the local
+# Supabase secret key printed by `npx supabase status` (SECRET_KEY). Never commit real values.
+# The integration tests do not read this file: they start the runtime themselves and pass the
+# local secret key directly. Hosted environments use `wrangler secret put` instead.
 SUPABASE_SECRET_KEY=
+
+# Optional, local only (ignored unless SUPABASE_URL is 127.0.0.1 or localhost):
+# ROUND_MS=3000                 # shorter Portal Partners rounds, for trying a time-out loss
+# TEST_RESULT_SAVE_FAILURES=1   # the first N result saves use a key Supabase rejects

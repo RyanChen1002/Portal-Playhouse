@@ -1,6 +1,6 @@
 // Shared world contract suite: one set of expectations for every WorldConnection
-// implementation. Runs against the in-memory mock (mock.world.contract.test.ts) and, later,
-// against the real client and the local runtime (Task 12).
+// implementation. Runs against the in-memory mock (mock.world.contract.test.ts) and against
+// the real client and the local runtime (real.world.contract.integration.test.ts).
 //
 // Timing is realistic on purpose: movement uses the real clock and 10 Hz steps of at most
 // 0.4 units, inside the arena budget (speed 4, refill 1.25 x speed per second), so the same
@@ -114,6 +114,38 @@ function sees(observer: WorldConnection, playerId: string, at: Vec3): boolean {
 }
 
 const ENTRANCE = PORTAL_ROOM.entrance;
+
+/**
+ * Plays a started Portal Partners round to a win: a holds the plate, b crosses and pulls the
+ * lever, each collects a crystal, both stand at the exit, and b opens it.
+ */
+export async function playToWin(a: WorldConnection, b: WorldConnection): Promise<void> {
+  // a holds the plate; b crosses the open bridge and pulls the lever.
+  const onPlate = v(PLATE.x, PLATE.z);
+  await walkTo(a, onPlate);
+  await waitFor(() => b.snapshot().room.session?.bridgeOpen === true, 'the bridge to open');
+  await walkPath(b, [v(0, -4), v(LEVER.x - 0.5, LEVER.z)]);
+  expectOk(await b.interact('lever'));
+  await waitFor(() => a.snapshot().room.session?.latched === true, 'the lever to latch');
+
+  // a crosses the latched bridge to crystal A while b goes to crystal B.
+  await Promise.all([
+    walkPath(a, [v(0, 2), v(0, -2), v(CRYSTAL_A.x + 0.5, CRYSTAL_A.z)]).then(async () => {
+      expectOk(await a.interact('crystal-a'));
+    }),
+    walkTo(b, v(CRYSTAL_B.x - 0.5, CRYSTAL_B.z)).then(async () => {
+      expectOk(await b.interact('crystal-b'));
+    }),
+  ]);
+
+  // Both stand at the exit; b opens it once it has seen a there.
+  const aExit = v(-0.5, -6.5);
+  const bExit = v(0.5, -6.5);
+  await Promise.all([walkTo(a, aExit), walkTo(b, bExit)]);
+  await waitFor(() => sees(b, a.playerId, aExit), 'b to see a at the exit');
+  await waitFor(() => b.snapshot().room.session?.crystals.every(Boolean) === true, 'both crystals');
+  expectOk(await b.interact('exit'));
+}
 
 export function describeWorldContract(label: string, factory: WorldContractFactory): void {
   describe(`world contract: ${label}`, () => {
@@ -272,6 +304,8 @@ export function describeWorldContract(label: string, factory: WorldContractFacto
         expect(a.snapshot().self.position).toEqual(ENTRANCE);
 
         await waitFor(() => b.snapshot().lastFinished?.sessionId === sid, 'b to receive game.finished');
+        // Over a real socket, player.left arrives as a later frame than game.finished.
+        await waitFor(() => !b.snapshot().room.players.some((p) => p.id === a.playerId), 'a to leave b’s room');
         const finished = seenByB.filter((e) => e.type === 'game.finished').map((e) => e.payload);
         expect(finished[0]).toEqual({
           sessionId: sid,
@@ -337,31 +371,7 @@ export function describeWorldContract(label: string, factory: WorldContractFacto
         const seenByA = record(a);
         const seenByB = record(b);
 
-        // a holds the plate; b crosses the open bridge and pulls the lever.
-        const onPlate = v(PLATE.x, PLATE.z);
-        await walkTo(a, onPlate);
-        await waitFor(() => b.snapshot().room.session?.bridgeOpen === true, 'the bridge to open');
-        await walkPath(b, [v(0, -4), v(LEVER.x - 0.5, LEVER.z)]);
-        expectOk(await b.interact('lever'));
-        await waitFor(() => a.snapshot().room.session?.latched === true, 'the lever to latch');
-
-        // a crosses the latched bridge to crystal A while b goes to crystal B.
-        await Promise.all([
-          walkPath(a, [v(0, 2), v(0, -2), v(CRYSTAL_A.x + 0.5, CRYSTAL_A.z)]).then(async () => {
-            expectOk(await a.interact('crystal-a'));
-          }),
-          walkTo(b, v(CRYSTAL_B.x - 0.5, CRYSTAL_B.z)).then(async () => {
-            expectOk(await b.interact('crystal-b'));
-          }),
-        ]);
-
-        // Both stand at the exit; b opens it once it has seen a there.
-        const aExit = v(-0.5, -6.5);
-        const bExit = v(0.5, -6.5);
-        await Promise.all([walkTo(a, aExit), walkTo(b, bExit)]);
-        await waitFor(() => sees(b, a.playerId, aExit), 'b to see a at the exit');
-        await waitFor(() => b.snapshot().room.session?.crystals.every(Boolean) === true, 'both crystals');
-        expectOk(await b.interact('exit'));
+        await playToWin(a, b);
 
         const expected = { sessionId: sid, outcome: 'win', score: 2, persistenceStatus: 'pending' };
         for (const [conn, seen] of [

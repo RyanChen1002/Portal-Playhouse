@@ -7,6 +7,7 @@ import type { WorldObject } from '../src/world-object';
 import {
   card,
   closeAll,
+  SECRET_KEY,
   installFakeSupabase,
   joinAs,
   recordIdempotently,
@@ -302,5 +303,24 @@ describe('result saving', () => {
     expect(saved.type === 'result.saved' && saved.payload.sessionId).toBe(sessionId);
     expect(await rows(stub)).toEqual([]);
     expect(fake.recordCalls()).toHaveLength(1);
+  });
+
+  it('local test override: the first N saves use a key Supabase rejects, then the real key', async () => {
+    const stub = freshWorld();
+    const clock = await fakeClock(stub);
+    expect(await runInDurableObject(stub, (i: WorldObject) => i.setTestOverrides({ resultSaveFailures: 1 }))).toBe(true);
+    const { sb, sessionId } = await playCancelledRound(stub);
+    await vi.waitFor(async () => expect((await rows(stub))[0]?.attempts).toBe(1));
+    expect(fake.results.has(sessionId)).toBe(false);
+
+    clock.t = (await alarmAt(stub))!;
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    const saved = await sb.next('result.saved');
+    expect(saved.type === 'result.saved' && saved.payload.sessionId).toBe(sessionId);
+    const keys = fake.rpcCalls.filter((c) => c.url.endsWith('/record_portal_partners_result')).map((c) => c.headers.get('apikey'));
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(SECRET_KEY);
+    expect(keys[1]).toBe(SECRET_KEY);
+    expect(await rows(stub)).toEqual([]);
   });
 });

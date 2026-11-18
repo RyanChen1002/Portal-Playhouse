@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import { parseClientMessage, type ClientMessage, type ErrorCode, type ServerMessage } from '../../shared/contracts';
 import {
   AUTH_DEADLINE_MS,
+  DEFAULT_WORLD_CONFIG,
   INVALID_MESSAGE_LIMIT,
   INVALID_MESSAGE_WINDOW_MS,
   MAX_MESSAGE_BYTES,
@@ -42,6 +43,30 @@ export interface TestOverrides {
   authDeadlineMs?: number;
   /** Clock for result-save scheduling only (retry times, the 1 h `failed` mark). */
   resultsNow?: () => number;
+  /** The next N save attempts use a key Supabase rejects, to simulate an outage. */
+  resultSaveFailures?: number;
+}
+
+/** A key no Supabase project accepts; used only for simulated save failures in local tests. */
+const REJECTED_TEST_KEY = 'sb_secret_rejected-by-test-override';
+
+/**
+ * Test-only runtime vars, set by the integration tests through wrangler's test harness:
+ * `ROUND_MS` (round length) and `TEST_RESULT_SAVE_FAILURES` (see TestOverrides). Both must be
+ * positive integers and are ignored unless SUPABASE_URL is the local stack.
+ */
+export function testVarsFrom(env: {
+  SUPABASE_URL: string;
+  ROUND_MS?: unknown;
+  TEST_RESULT_SAVE_FAILURES?: unknown;
+}): { roundMs: number | null; resultSaveFailures: number } {
+  if (!isLocalUrl(env.SUPABASE_URL)) return { roundMs: null, resultSaveFailures: 0 };
+  return { roundMs: positiveInt(env.ROUND_MS), resultSaveFailures: positiveInt(env.TEST_RESULT_SAVE_FAILURES) ?? 0 };
+}
+
+function positiveInt(v: unknown): number | null {
+  const n = typeof v === 'string' && /^\d+$/.test(v) ? Number(v) : typeof v === 'number' ? v : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
 /** True only for the local Supabase stack. Test-only overrides are refused anywhere else. */
@@ -78,6 +103,9 @@ export class WorldObject extends DurableObject<Env> {
   private readonly world: World;
   private readonly verifier: TokenVerifier;
   private readonly supabase: SupabaseServer;
+  /** Local tests only: a client whose key Supabase rejects, used for the next N saves. */
+  private readonly rejectedSupabase: SupabaseServer;
+  private resultSaveFailures = 0;
   private readonly conns = new Map<ConnId, Conn>();
   private ticker: ReturnType<typeof setInterval> | null = null;
   private authDeadlineMs = AUTH_DEADLINE_MS;
@@ -91,9 +119,16 @@ export class WorldObject extends DurableObject<Env> {
     if (!env.SUPABASE_URL || !env.SUPABASE_SECRET_KEY) {
       throw new Error('World object is missing SUPABASE_URL or SUPABASE_SECRET_KEY');
     }
-    this.world = new World({ now: () => Date.now(), newId: () => crypto.randomUUID() });
+    const testVars = testVarsFrom(env);
+    this.world = new World({
+      now: () => Date.now(),
+      newId: () => crypto.randomUUID(),
+      ...(testVars.roundMs !== null ? { config: { ...DEFAULT_WORLD_CONFIG, roundMs: testVars.roundMs } } : {}),
+    });
+    this.resultSaveFailures = testVars.resultSaveFailures;
     this.verifier = createTokenVerifier({ supabaseUrl: env.SUPABASE_URL });
     this.supabase = createSupabaseServer({ url: env.SUPABASE_URL, secretKey: env.SUPABASE_SECRET_KEY });
+    this.rejectedSupabase = createSupabaseServer({ url: env.SUPABASE_URL, secretKey: REJECTED_TEST_KEY });
     this.results = new PendingResults(
       ctx.storage.sql,
       (at) => ctx.storage.setAlarm(at),
@@ -109,6 +144,7 @@ export class WorldObject extends DurableObject<Env> {
     if (!isLocalUrl(this.env.SUPABASE_URL)) return false;
     if (o.authDeadlineMs !== undefined) this.authDeadlineMs = o.authDeadlineMs;
     if (o.resultsNow !== undefined) this.resultsNow = o.resultsNow;
+    if (o.resultSaveFailures !== undefined) this.resultSaveFailures = o.resultSaveFailures;
     return true;
   }
 
@@ -386,7 +422,10 @@ export class WorldObject extends DurableObject<Env> {
     if (this.saving.has(round.sessionId)) return;
     this.saving.add(round.sessionId);
     try {
-      const r = await this.supabase.recordResult(round);
+      // resultSaveFailures is non-zero only with a local SUPABASE_URL (testVarsFrom, setTestOverrides).
+      const server = this.resultSaveFailures > 0 ? this.rejectedSupabase : this.supabase;
+      if (this.resultSaveFailures > 0) this.resultSaveFailures--;
+      const r = await server.recordResult(round);
       if (r.error) {
         log('result.save_failed', { code: r.error.code });
         const { failedStatusReached } = this.results.markFailed(round.sessionId);
