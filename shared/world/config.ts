@@ -77,10 +77,7 @@ export const BUDGET_SLACK = 0.5;
 export const Y_MIN = 0;
 export const Y_MAX = 3;
 
-// Results persistence retries: 5 s, 30 s, 2 min, then every 10 min
-export const RESULT_RETRY_DELAYS_MS: readonly number[] = [5_000, 30_000, 120_000];
-export const RESULT_RETRY_REPEAT_MS = 600_000;
-export const RESULT_FAILED_AFTER_MS = 3_600_000;
+// Result-save retry timing lives in runtime/src/results.ts (the engine does not save results).
 
 export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   worldLimit: WORLD_LIMIT,

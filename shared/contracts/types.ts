@@ -68,6 +68,22 @@ export interface SessionState {
 }
 
 export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed';
+/**
+ * Why a world connection reached `closed`: `idle`, `replaced` (signed in elsewhere) and `left`
+ * come from 1000 closes (or leaveWorld); `unauthorized` from a 4401 the refresh did not fix (or a
+ * reconnect admitted as another player); `invalid` from 4400; `worldFull` from 4409;
+ * `unavailable` when the first connection failed (4503 or no answer); `lost` when the reconnect
+ * schedule ran out.
+ */
+export type WorldCloseReason =
+  | 'idle'
+  | 'replaced'
+  | 'left'
+  | 'unauthorized'
+  | 'invalid'
+  | 'worldFull'
+  | 'unavailable'
+  | 'lost';
 export type ServerEventType = Exclude<ServerMessage['type'], 'request.accepted' | 'request.error'>;
 export type ServerEventPayload<K extends ServerEventType> = Extract<ServerMessage, { type: K }>['payload'];
 
@@ -75,6 +91,11 @@ export type ServerEventPayload<K extends ServerEventType> = Extract<ServerMessag
 export interface WorldConnection {
   readonly playerId: string;
   readonly state: ConnectionState;
+  /**
+   * Null until the state is `closed`; then why it closed. Set before the `closed` state is
+   * emitted, so `onConnectionState` listeners can read it.
+   */
+  readonly closeReason: WorldCloseReason | null;
   /**
    * The latest world state, kept current from server events. Returns a copy.
    * `self.position` is the last position this client sent (the server does not echo moves);

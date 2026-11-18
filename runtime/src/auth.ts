@@ -8,7 +8,10 @@ export interface VerifiedIdentity {
 }
 
 export interface TokenVerifier {
-  /** Never throws. Every failure gives the same `UNAUTHORIZED` error. */
+  /**
+   * Never throws. Every token failure gives the same `UNAUTHORIZED` error; while no key set
+   * has ever loaded, the result is `SERVICE_UNAVAILABLE` instead (the token cannot be checked).
+   */
   verify(token: string): Promise<Result<VerifiedIdentity>>;
 }
 
@@ -31,6 +34,12 @@ const JWKS_FETCH_TIMEOUT_MS = 5_000;
 const UNAUTHORIZED: Result<VerifiedIdentity> = Object.freeze({
   data: null,
   error: Object.freeze<AppError>({ code: 'UNAUTHORIZED', message: 'Your session is not valid. Please sign in again.' }),
+});
+
+/** No key set has ever loaded, so no token can be checked; the client retries later. */
+const UNAVAILABLE: Result<VerifiedIdentity> = Object.freeze({
+  data: null,
+  error: Object.freeze<AppError>({ code: 'SERVICE_UNAVAILABLE', message: 'The service is unavailable. Please try again later.' }),
 });
 
 type KeySet = ReturnType<typeof createLocalJWKSet>;
@@ -93,7 +102,7 @@ export function createTokenVerifier(opts: TokenVerifierOptions): TokenVerifier {
       try {
         if (!keys) await refreshKeys();
         const current = keys;
-        if (!current) return UNAUTHORIZED;
+        if (!current) return UNAVAILABLE;
         try {
           return await check(token, current);
         } catch (err) {

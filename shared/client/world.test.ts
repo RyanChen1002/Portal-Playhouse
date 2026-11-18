@@ -195,6 +195,47 @@ describe('world connection', () => {
     });
   }
 
+  it('a 1000 close with reason idle sets closeReason idle before the closed state is emitted', async () => {
+    const h = harness();
+    const conn = await connected(h);
+    expect(conn.closeReason).toBeNull();
+    const seen: [string, string | null][] = [];
+    conn.onConnectionState((s) => seen.push([s, conn.closeReason]));
+    h.sockets[0]!.serverClose(1000, 'idle');
+    expect(conn.state).toBe('closed');
+    expect(conn.closeReason).toBe('idle');
+    expect(seen).toEqual([['closed', 'idle']]);
+  });
+
+  it('closeReason is lost when the reconnect schedule runs out', async () => {
+    const h = harness();
+    const conn = await connected(h);
+    h.sockets[0]!.serverClose(1006);
+    for (const [i, delay] of RECONNECT_DELAYS_MS.entries()) {
+      await tick(delay);
+      h.sockets[i + 1]!.serverClose(1006);
+    }
+    expect(conn.state).toBe('closed');
+    expect(conn.closeReason).toBe('lost');
+  });
+
+  it('a reconnect admitted as a different player closes with closeReason unauthorized', async () => {
+    const h = harness();
+    const conn = await connected(h);
+    h.sockets[0]!.serverClose(1006);
+    await tick(500);
+    const s = h.sockets[1]!;
+    s.open();
+    s.push({ type: 'world.snapshot', payload: snapshot(2, 'p2') });
+    expect(conn.state).toBe('closed');
+    expect(conn.closeReason).toBe('unauthorized');
+    expect(conn.playerId).toBe('p1');
+    expect(conn.snapshot().self.playerId).toBe('p1');
+    expect(s.closedByClient).toBe(1000);
+    await tick(60_000);
+    expect(h.sockets).toHaveLength(2);
+  });
+
   it('a 1000 close with any other reason reconnects on the schedule', async () => {
     const h = harness();
     const conn = await connected(h);

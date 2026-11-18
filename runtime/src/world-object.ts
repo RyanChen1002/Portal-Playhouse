@@ -248,8 +248,9 @@ export class WorldObject extends DurableObject<Env> {
     const verified = await this.verifier.verify(token);
     if (conn.phase !== 'authenticating') return; // socket went away meanwhile
     if (verified.error) {
-      log('auth.rejected', { code: 'UNAUTHORIZED' });
-      this.reject(conn, requestId, 'UNAUTHORIZED');
+      // UNAUTHORIZED closes with 4401; SERVICE_UNAVAILABLE (no key set loaded yet) with 4503.
+      log('auth.rejected', { code: verified.error.code });
+      this.reject(conn, requestId, verified.error.code);
       return;
     }
     const { playerId, expiresAt } = verified.data;
@@ -284,8 +285,8 @@ export class WorldObject extends DurableObject<Env> {
     const verified = await this.verifier.verify(token);
     if (conn.phase !== 'admitted') return;
     if (verified.error) {
-      log('refresh.rejected', { playerId: conn.playerId, code: 'UNAUTHORIZED' });
-      this.sendTo(conn, errorMessage(requestId, 'UNAUTHORIZED'));
+      log('refresh.rejected', { playerId: conn.playerId, code: verified.error.code });
+      this.sendTo(conn, errorMessage(requestId, verified.error.code));
       return;
     }
     if (verified.data.playerId !== conn.playerId) {

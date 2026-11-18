@@ -397,8 +397,9 @@ export class World {
 
     this.toRoom(lobby, { type: 'player.left', payload: { playerId: p.card.id, reason: 'moved', revision: lobby.revision } });
     this.toRoom(room, { type: 'player.joined', payload: { player: presence(p), revision: room.revision } }, p.card.id);
-    this.announceReset(room, cleared);
+    // The joiner's reply (the new room's snapshot) goes before the resets, so they follow it.
     this.reply(p, requestId, this.roomSnapshot(room));
+    this.announceReset(room, cleared);
     this.broadcastBoard(room);
     return null;
   }

@@ -334,8 +334,10 @@ export function describeWorldContract(label: string, factory: WorldContractFacto
 
         await walkTo(a, v(1, 4));
         await waitFor(() => sees(b, a.playerId, v(1, 4)), 'b to see a move');
+        expect(a.closeReason).toBeNull();
         expectOk(await a.leaveWorld());
         expect(a.state).toBe('closed');
+        expect(a.closeReason).toBe('left');
         expect(states).toContain('closed');
         await waitFor(() => !b.snapshot().room.players.some((p) => p.id === a.playerId), 'a to leave b’s room');
         expect(

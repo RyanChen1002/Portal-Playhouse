@@ -279,6 +279,8 @@ describe('World', () => {
     expect(roomSnap.players.map((p) => p.ready)).toEqual([false, false]);
     const resetEvent = { type: 'player.ready', payload: { playerId: 'p1', ready: false, revision: roomSnap.revision } };
     expect(only(joinerMsgs, 'player.ready')).toEqual([resetEvent]);
+    // The joiner gets the new room's snapshot first, then the reset events that follow it.
+    expect(joinerMsgs.indexOf(snap)).toBeLessThan(joinerMsgs.findIndex((m) => m.type === 'player.ready'));
     const stayer = tw.messagesFor('c1b').filter((m) => m.type !== 'room.updated');
     expect(stayer.map((m) => m.type)).toEqual(['player.joined', 'player.ready']);
     expect(stayer[1]).toEqual(resetEvent);

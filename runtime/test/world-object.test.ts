@@ -172,6 +172,17 @@ describe('authentication', () => {
     expect((await s.closed).code).toBe(4503);
   });
 
+  it('a JWKS that never loaded gives SERVICE_UNAVAILABLE and closes with 4503', async () => {
+    const id = newPlayer();
+    fake.jwksDown = true;
+    const s = await open(freshWorld());
+    s.send({ type: 'auth', requestId: 'r1', payload: { token: await tokenFor(id) } });
+    const err = errorOf(await s.next('request.error'));
+    expect(err.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(err.requestId).toBe('r1');
+    expect((await s.closed).code).toBe(4503);
+  });
+
   it('a Supabase outage gives SERVICE_UNAVAILABLE and closes', async () => {
     const id = newPlayer();
     fake.down = true;

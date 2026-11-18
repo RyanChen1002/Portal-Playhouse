@@ -137,7 +137,7 @@ describe('createTokenVerifier', () => {
     expect(messages.size).toBe(1);
   });
 
-  it('gives UNAUTHORIZED, without throwing, when the key set cannot be fetched', async () => {
+  it('gives SERVICE_UNAVAILABLE, without throwing, while no key set has ever loaded', async () => {
     const down = createTokenVerifier({
       supabaseUrl: SUPABASE_URL,
       fetch: async () => {
@@ -146,8 +146,37 @@ describe('createTokenVerifier', () => {
       now: () => NOW_MS,
     });
     const result = await down.verify(await signEs256());
-    expect(result.error?.code).toBe('UNAUTHORIZED');
-    expect(result.error?.message).toBe(await expectUnauthorized('garbage'));
+    expect(result.data).toBeNull();
+    expect(result.error?.code).toBe('SERVICE_UNAVAILABLE');
+    // Still unavailable in the cooldown, with no keys.
+    expect((await down.verify(await signEs256())).error?.code).toBe('SERVICE_UNAVAILABLE');
+  });
+
+  it('a first JWKS fetch that fails gives SERVICE_UNAVAILABLE; once keys load, a bad signature is UNAUTHORIZED', async () => {
+    let fail = true;
+    const flaky = createTokenVerifier({
+      supabaseUrl: SUPABASE_URL,
+      fetch: async (input, init) => (fail ? new Response('down', { status: 500 }) : jwksFetch(input, init)),
+      now: () => clock,
+    });
+    const valid = await signEs256();
+    expect((await flaky.verify(valid)).error?.code).toBe('SERVICE_UNAVAILABLE');
+
+    fail = false;
+    clock += 60_000;
+    expect((await flaky.verify(valid)).data?.playerId).toBe(SUB);
+
+    const [header, payload] = valid.split('.');
+    const otherSig = (await sign(claims(), stranger.privateKey, { alg: 'ES256', kid: 'es-key-1' })).split('.')[2];
+    const bad = await flaky.verify(`${header}.${payload}.${otherSig}`);
+    expect(bad.error?.code).toBe('UNAUTHORIZED');
+    expect(bad.error?.message).toBe(await expectUnauthorized('garbage'));
+
+    // A later failed fetch keeps the loaded keys: still UNAUTHORIZED, not unavailable.
+    fail = true;
+    clock += 60_000;
+    const unknownKid = await sign(claims(), stranger.privateKey, { alg: 'ES256', kid: 'unknown-kid' });
+    expect((await flaky.verify(unknownKid)).error?.code).toBe('UNAUTHORIZED');
   });
 
   it('refetches the key set at most once per 60 s for unknown key IDs', async () => {
@@ -191,7 +220,7 @@ describe('createTokenVerifier', () => {
       now: () => clock,
     });
     const token = await signEs256();
-    for (let i = 0; i < 5; i += 1) expect((await failing.verify(token)).error?.code).toBe('UNAUTHORIZED');
+    for (let i = 0; i < 5; i += 1) expect((await failing.verify(token)).error?.code).toBe('SERVICE_UNAVAILABLE');
     expect(attempts).toBe(1);
     clock += 59_999;
     for (let i = 0; i < 5; i += 1) await failing.verify(token);

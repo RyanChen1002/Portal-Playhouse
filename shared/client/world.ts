@@ -25,6 +25,7 @@ import type {
   ServerEventType,
   ServerMessage,
   Vec3,
+  WorldCloseReason,
   WorldConnection,
   WorldSnapshot,
 } from '../contracts/index';
@@ -103,6 +104,25 @@ function isWorldSnapshot(x: unknown): x is WorldSnapshot {
   return isRecord(x) && isRecord(x.self) && typeof x.self.playerId === 'string' && isRoomSnapshot(x.room) && Array.isArray(x.board);
 }
 
+/** Why a final close ended the connection (a 1000 reason or a close code). */
+function finalCloseReason(code: number, reason: string): WorldCloseReason {
+  if (code === CLOSE_CODES.normal) {
+    if (reason === 'session.replaced') return 'replaced';
+    if (reason === 'idle') return 'idle';
+    if (reason === 'left') return 'left';
+  }
+  switch (code) {
+    case CLOSE_CODES.unauthorized:
+      return 'unauthorized';
+    case CLOSE_CODES.worldFull:
+      return 'worldFull';
+    case CLOSE_CODES.invalid:
+      return 'invalid';
+    default:
+      return 'unavailable';
+  }
+}
+
 /** The error a close code stands for, when no `request.error` explained it. */
 function closeError(code: number): AppError {
   switch (code) {
@@ -159,6 +179,7 @@ type Listener = (payload: unknown) => void;
 
 class Connection implements WorldConnection {
   playerId = '';
+  closeReason: WorldCloseReason | null = null;
   private current: ConnectionState = 'connecting';
   private snap: WorldSnapshot | null = null;
   private ws: SocketLike | null = null;
@@ -246,14 +267,14 @@ class Connection implements WorldConnection {
       if (this.final) return ok(null);
       if (this.current !== 'connected') {
         // Not admitted right now: stop reconnecting; the server's grace period frees the slot.
-        this.finish(null);
+        this.finish(null, 'left');
         return ok(null);
       }
       const r = await this.request('world.leave', {});
-      this.finish(null);
+      this.finish(null, 'left');
       return r.error ? failWith(r.error) : ok(null);
     } catch {
-      this.finish(null);
+      this.finish(null, 'left');
       return fail('SERVICE_UNAVAILABLE');
     }
   }
@@ -334,7 +355,7 @@ class Connection implements WorldConnection {
     }
     if (this.final) return;
     if (!token) {
-      this.finish(appError('UNAUTHORIZED'));
+      this.finish(appError('UNAUTHORIZED'), 'unauthorized');
       return;
     }
     this.token = token;
@@ -386,12 +407,12 @@ class Connection implements WorldConnection {
 
     const finalNormal = code === CLOSE_CODES.normal && FINAL_NORMAL_REASONS.includes(reason);
     if (finalNormal || code === CLOSE_CODES.worldFull || code === CLOSE_CODES.invalid) {
-      this.finish(err);
+      this.finish(err, finalCloseReason(code, reason));
       return;
     }
     if (code === CLOSE_CODES.unauthorized) {
       if (this.refreshedThisOutage) {
-        this.finish(err);
+        this.finish(err, 'unauthorized');
         return;
       }
       this.refreshedThisOutage = true;
@@ -401,7 +422,7 @@ class Connection implements WorldConnection {
     }
     // The first connection does not retry: connectWorld reports the failure instead.
     if (!this.everConnected) {
-      this.finish(err);
+      this.finish(err, finalCloseReason(code, reason));
       return;
     }
     this.scheduleRetry(err);
@@ -421,7 +442,7 @@ class Connection implements WorldConnection {
   private scheduleRetry(err: AppError): void {
     const delay = RECONNECT_DELAYS_MS[this.attempts];
     if (delay === undefined) {
-      this.finish(err);
+      this.finish(err, 'lost');
       return;
     }
     this.attempts++;
@@ -429,10 +450,14 @@ class Connection implements WorldConnection {
     this.retryTimer = setTimeout(() => void this.attempt(), delay);
   }
 
-  /** Ends the connection for good. `err` is reported to connectWorld if it is still waiting. */
-  private finish(err: AppError | null): void {
+  /**
+   * Ends the connection for good. `err` is reported to connectWorld if it is still waiting;
+   * `reason` is set before the `closed` state is emitted.
+   */
+  private finish(err: AppError | null, reason: WorldCloseReason): void {
     if (this.final) return;
     this.final = true;
+    this.closeReason = reason;
     this.clearTimer('retryTimer');
     this.clearTimer('refreshTimer');
     this.clearTimer('authTimer');
@@ -595,6 +620,11 @@ class Connection implements WorldConnection {
 
   private admit(snapshot: WorldSnapshot): void {
     this.clearTimer('authTimer');
+    // A reconnect must come back as the same player (another account signed in meanwhile).
+    if (this.everConnected && snapshot.self.playerId !== this.playerId) {
+      this.finish(appError('UNAUTHORIZED'), 'unauthorized');
+      return;
+    }
     this.admitted = true;
     this.snap = snapshot;
     this.playerId = snapshot.self.playerId;

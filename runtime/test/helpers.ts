@@ -45,6 +45,8 @@ export interface FakeSupabase {
   profiles: Map<string, PlayerCard>;
   /** When true, every RPC call fails at the network level. */
   down: boolean;
+  /** When true, the JWKS endpoint answers 503. */
+  jwksDown: boolean;
   /** Headers and bodies of RPC calls, for assertions. */
   rpcCalls: { url: string; headers: Headers; body: unknown }[];
   /** Saved results by session id (idempotent, like `record_portal_partners_result`). */
@@ -86,6 +88,7 @@ export async function installFakeSupabase(): Promise<FakeSupabase> {
   const fake: FakeSupabase = {
     profiles: new Map(),
     down: false,
+    jwksDown: false,
     rpcCalls: [],
     results: new Map(),
     resultsDown: false,
@@ -95,7 +98,9 @@ export async function installFakeSupabase(): Promise<FakeSupabase> {
   };
   const spy: MockInstance<typeof fetch> = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const req = new Request(input, init);
-    if (req.url === JWKS_URL) return Response.json({ keys: [k.publicJwk] });
+    if (req.url === JWKS_URL) {
+      return fake.jwksDown ? new Response('unavailable', { status: 503 }) : Response.json({ keys: [k.publicJwk] });
+    }
     if (req.url.startsWith(`${SUPABASE_URL}/rest/v1/rpc/`)) {
       const body: unknown = await req.json();
       fake.rpcCalls.push({ url: req.url, headers: req.headers, body });
