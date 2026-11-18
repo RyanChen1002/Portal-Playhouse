@@ -5,6 +5,8 @@ import type {
   GameFinished,
   Outcome,
   PlayerCard,
+  PortalPartnersState,
+  PortalPartnersTarget,
   Presence,
   Result,
   RoomId,
@@ -15,6 +17,7 @@ import type {
   WorldSnapshot,
 } from '../contracts';
 import {
+  ARENA_GAP_HALF_Z,
   COURTYARD_SPAWN,
   COURTYARD_SPAWN_ROTATION,
   DEFAULT_WORLD_CONFIG,
@@ -23,6 +26,17 @@ import {
   type WorldConfig,
 } from './config';
 import { checkMove, newTracker, type MoveTracker } from './movement';
+import {
+  arenaBarrier,
+  bridgeOpen,
+  interact,
+  score,
+  setBack,
+  spawnPositions,
+  startRound,
+  timeUp,
+  type PPRound,
+} from './portal-partners';
 
 export type ConnId = string;
 export interface Outgoing {
@@ -64,6 +78,12 @@ interface PlayerState {
   tracker: MoveTracker | null;
   ready: boolean;
   lastFinished: GameFinished | null;
+  /** Last accepted arena position outside the bridge gap; decides the side of a set-back. */
+  lastOutside: Vec3 | null;
+  /** Time of the last handled message, for the idle limit. */
+  lastActive: number;
+  /** While disconnected: when the grace period runs out. */
+  graceUntil: number | null;
 }
 
 interface RoomState {
@@ -77,7 +97,12 @@ interface RoomState {
   sessionId: string | null;
   startedAt: string | null;
   score: number | null;
+  round: PPRound | null;
+  /** When `game.state` was last sent to the round's players. */
+  lastStateAt: number;
 }
+
+const STATE_INTERVAL_MS = 1000;
 
 /**
  * The platform-free world engine. Callers feed it admitted connections and parsed client
@@ -108,14 +133,19 @@ export class World {
     if (existing) {
       if (existing.conn !== null && existing.conn !== conn) {
         // One connection per account: the new connection takes over slot, room and position.
+        // A takeover is not a disconnect, so nobody else hears about it.
         this.send(existing.conn, { type: 'session.replaced', payload: {} });
         this.closings.push({ conn: existing.conn, reason: 'session.replaced' });
         this.conns.delete(existing.conn);
       }
+      const restored = existing.conn === null;
       existing.conn = conn;
+      existing.graceUntil = null;
+      existing.lastActive = this.now();
       // Move sequences are per connection, so the new one starts its own count.
       if (existing.tracker) existing.tracker = { ...existing.tracker, lastSequence: -1 };
       this.conns.set(conn, player.id);
+      if (restored) this.announceConnection(existing, true);
       this.send(conn, { type: 'world.snapshot', payload: this.worldSnapshot(existing) });
       return { data: null, error: null };
     }
@@ -134,6 +164,9 @@ export class World {
       tracker: newTracker({ ...COURTYARD_SPAWN }, COURTYARD_SPAWN_ROTATION, now),
       ready: false,
       lastFinished: null,
+      lastOutside: null,
+      lastActive: now,
+      graceUntil: null,
     };
     this.players.set(p.card.id, p);
     this.conns.set(conn, p.card.id);
@@ -150,6 +183,7 @@ export class World {
     const id = this.conns.get(conn);
     const p = id === undefined ? undefined : this.players.get(id);
     if (!p) return;
+    p.lastActive = this.now();
 
     if (msg.type === 'player.move') {
       this.move(p, msg.payload);
@@ -165,11 +199,32 @@ export class World {
     }
   }
 
-  /** Unexpected loss of a connection. Grace handling arrives with Task 6. */
-  connectionLost(_conn: ConnId): void {}
+  /**
+   * Unexpected loss of a connection: the player keeps slot, room, position and round for the
+   * grace period. Connections already replaced or closed by the world are ignored.
+   */
+  connectionLost(conn: ConnId): void {
+    this.advance();
+    const id = this.conns.get(conn);
+    const p = id === undefined ? undefined : this.players.get(id);
+    if (!p) return;
+    this.conns.delete(conn);
+    p.conn = null;
+    p.graceUntil = this.now() + this.config.graceMs;
+    this.announceConnection(p, false);
+  }
 
-  /** Runs due timers (grace expiry, round time-out, idle limit). None exist yet. */
-  advance(): void {}
+  /**
+   * Runs every due deadline (round time-out, grace expiry, idle limit) in time order, so the
+   * earliest one decides, then sends the once-per-second `game.state` for running rounds.
+   */
+  advance(): void {
+    const now = this.now();
+    for (let due = this.nextDeadline(now); due; due = this.nextDeadline(now)) due.run();
+    for (const room of this.rooms.values()) {
+      if (room.round && now - room.lastStateAt >= STATE_INTERVAL_MS) this.sendState(room);
+    }
+  }
 
   takeOutbox(): Outgoing[] {
     const out = this.outbox;
@@ -208,7 +263,7 @@ export class World {
       case 'game.ready':
         return this.setReady(p, msg.requestId, msg.payload.ready);
       case 'game.interact':
-        return { code: 'NOT_IN_GAME', message: 'There is no round in progress.' };
+        return this.handleInteract(p, msg.requestId, msg.payload);
       case 'world.leave':
         this.leaveWorld(p, msg.requestId);
         return null;
@@ -220,7 +275,12 @@ export class World {
     const loc = locationOf(room);
     // Waiting rooms have no positions: there is nothing to move or correct to.
     if (loc === null || !p.tracker) return;
-    const r = checkMove(p.tracker, loc, m.sequence, m.position, m.rotation, this.now());
+    const round = room.round;
+    // Every character counts for the plate, including disconnected ones.
+    const positions = this.positions(room);
+    const openBefore = round ? bridgeOpen(round, positions) : false;
+    const barrier = round ? arenaBarrier(round, positions) : undefined;
+    const r = checkMove(p.tracker, loc, m.sequence, m.position, m.rotation, this.now(), barrier);
     if (r.kind === 'stale') return;
     p.tracker = r.tracker;
     if (r.kind === 'rejected') {
@@ -239,6 +299,7 @@ export class World {
     }
     p.position = { ...m.position };
     p.rotation = m.rotation;
+    if (round && Math.abs(m.position.z) >= ARENA_GAP_HALF_Z) p.lastOutside = { ...m.position };
     room.revision++;
     this.toRoom(
       room,
@@ -254,6 +315,45 @@ export class World {
       },
       p.card.id,
     );
+    if (round) this.bridgeCheck(room, round, openBefore);
+  }
+
+  private handleInteract(
+    p: PlayerState,
+    requestId: string,
+    m: { sessionId: string; actionId: string; target: PortalPartnersTarget },
+  ) {
+    const room = this.roomOf(p);
+    const round = room.round;
+    if (!round || round.ended || !round.playerIds.includes(p.card.id) || m.sessionId !== round.sessionId) {
+      return { code: 'NOT_IN_GAME' as const, message: 'There is no round in progress for you.' };
+    }
+    const positions = new Map<string, Vec3>();
+    const connected = new Map<string, boolean>();
+    for (const member of this.members(room)) {
+      if (member.position) positions.set(member.card.id, member.position);
+      connected.set(member.card.id, member.conn !== null);
+    }
+    const latchedBefore = round.latched;
+    const scoreBefore = score(round);
+    const r = interact(round, p.card.id, m.actionId, m.target, positions, connected);
+    if (!r.ok) return { code: r.code, message: r.message };
+
+    this.reply(p, requestId, null);
+    if (r.won) {
+      this.finishRound(room, 'win', null);
+      return null;
+    }
+    const scored = score(round) !== scoreBefore;
+    if (scored || round.latched !== latchedBefore) {
+      room.revision++;
+      this.sendState(room);
+    }
+    if (scored) {
+      room.score = score(round);
+      this.broadcastBoard(room);
+    }
+    return null;
   }
 
   private join(p: PlayerState, requestId: string, roomId: RoomId) {
@@ -293,6 +393,7 @@ export class World {
     const room = this.roomOf(p);
     if (!room.config) return { code: 'INVALID_ACTION' as const, message: 'You are not in a game room.' };
 
+    this.cancelRoundOf(p, 'left');
     remove(room.members, p.card.id);
     const cleared = this.resetReady(room);
     room.revision++;
@@ -324,6 +425,7 @@ export class World {
       this.toRoom(room, { type: 'player.ready', payload: { playerId: p.card.id, ready, revision: room.revision } });
     }
     this.reply(p, requestId, null);
+    this.maybeStartRound(room);
     return null;
   }
 
@@ -334,7 +436,185 @@ export class World {
       this.closings.push({ conn, reason: 'left' });
       this.conns.delete(conn);
     }
+    this.cancelRoundOf(p, 'left');
     this.removePlayer(p, 'left');
+  }
+
+  // ---- rounds ----
+
+  /** Starts exactly one round when a waiting room holds two players who are all ready. */
+  private maybeStartRound(room: RoomState): void {
+    const c = room.config;
+    const ms = this.members(room);
+    if (!c || room.status !== 'waiting' || ms.length < c.minPlayers || !ms.every((m) => m.ready)) return;
+    const [a, b] = ms;
+    if (!a || !b || ms.length !== 2) return;
+
+    const now = this.now();
+    const sessionId = this.newId();
+    room.round = startRound(sessionId, [a.card.id, b.card.id], now);
+    room.status = 'playing';
+    room.sessionId = sessionId;
+    room.startedAt = iso(now);
+    room.score = 0;
+    const spawns = spawnPositions();
+    [a, b].forEach((m, i) => {
+      const at = spawns[i]!;
+      m.position = { ...at };
+      m.tracker = newTracker({ ...at }, m.rotation, now, 'arena');
+      m.lastOutside = { ...at };
+    });
+    room.revision++;
+    this.sendState(room);
+    this.broadcastBoard(room);
+  }
+
+  /**
+   * Ends the room's round: tells its connected players (except `except`), records the
+   * FinishedRound, and returns the room to waiting with readiness reset and positions cleared.
+   */
+  private finishRound(room: RoomState, outcome: Outcome, cancelReason: CancelReason | null, except?: string): void {
+    const round = room.round!;
+    round.ended = true;
+    const result: GameFinished = {
+      sessionId: round.sessionId,
+      outcome,
+      score: score(round),
+      persistenceStatus: 'pending',
+      ...(cancelReason ? { reason: cancelReason } : {}),
+    };
+    for (const id of round.playerIds) {
+      const m = this.players.get(id);
+      if (!m) continue;
+      m.lastFinished = { ...result };
+      if (m.conn !== null && id !== except) this.send(m.conn, { type: 'game.finished', payload: { ...result } });
+    }
+    this.finished.push({
+      sessionId: round.sessionId,
+      playerIds: [...round.playerIds],
+      outcome,
+      cancelReason,
+      score: result.score,
+      startedAt: room.startedAt!,
+      completedAt: iso(this.now()),
+    });
+
+    room.round = null;
+    room.status = 'waiting';
+    room.sessionId = null;
+    room.startedAt = null;
+    room.score = null;
+    for (const m of this.members(room)) {
+      m.position = null;
+      m.tracker = null;
+      m.lastOutside = null;
+    }
+    const cleared = this.resetReady(room);
+    room.revision++;
+    this.announceReset(room, cleared);
+    this.broadcastBoard(room);
+  }
+
+  /** Cancels the round `p` is playing in, if any; `p` is not sent the result. */
+  private cancelRoundOf(p: PlayerState, reason: CancelReason): void {
+    const room = this.roomOf(p);
+    if (room.round?.playerIds.includes(p.card.id)) this.finishRound(room, 'cancelled', reason, p.card.id);
+  }
+
+  /**
+   * After something that may change the bridge: on open -> closed, every character in the gap
+   * is set back to the side it entered from. Any change sends `game.state`.
+   */
+  private bridgeCheck(room: RoomState, round: PPRound, openBefore: boolean): void {
+    const openNow = bridgeOpen(round, this.positions(room));
+    if (openNow === openBefore) return;
+    if (!openNow) {
+      for (const m of this.members(room)) {
+        if (!m.position || !m.tracker || !m.lastOutside || Math.abs(m.position.z) >= ARENA_GAP_HALF_Z) continue;
+        const to = setBack(m.position, m.lastOutside);
+        m.position = to;
+        m.tracker = { ...m.tracker, position: { ...to } };
+        room.revision++;
+        const sequence = m.tracker.lastSequence;
+        if (m.conn !== null) {
+          this.send(m.conn, {
+            type: 'player.corrected',
+            payload: { sequence, position: { ...to }, rotation: m.rotation, reason: 'bridgeClosed' },
+          });
+        }
+        this.toRoom(
+          room,
+          {
+            type: 'player.updated',
+            payload: { playerId: m.card.id, position: { ...to }, rotation: m.rotation, sequence, revision: room.revision },
+          },
+          m.card.id,
+        );
+      }
+    }
+    this.sendState(room);
+  }
+
+  private sendState(room: RoomState): void {
+    const round = room.round!;
+    const now = this.now();
+    room.lastStateAt = now;
+    const message: ServerMessage = {
+      type: 'game.state',
+      payload: { sessionId: round.sessionId, revision: room.revision, state: this.gameState(room) },
+    };
+    for (const id of round.playerIds) {
+      const m = this.players.get(id);
+      if (m?.conn) this.send(m.conn, message);
+    }
+  }
+
+  // ---- deadlines ----
+
+  /** The earliest due deadline; ties go to round time-outs, then grace, then idle. */
+  private nextDeadline(now: number): { run: () => void } | null {
+    let best: { at: number; rank: number; run: () => void } | null = null;
+    const consider = (at: number, rank: number, run: () => void) => {
+      if (at > now) return;
+      if (!best || at < best.at || (at === best.at && rank < best.rank)) best = { at, rank, run };
+    };
+    for (const room of this.rooms.values()) {
+      const round = room.round;
+      if (round && timeUp(round, now, this.config.roundMs)) {
+        consider(round.startedAt + this.config.roundMs, 0, () => this.finishRound(room, 'loss', null));
+      }
+    }
+    for (const p of this.players.values()) {
+      if (p.graceUntil !== null) consider(p.graceUntil, 1, () => this.expireGrace(p));
+      else if (p.conn !== null) consider(p.lastActive + this.config.idleMs, 2, () => this.expireIdle(p));
+    }
+    return best;
+  }
+
+  private expireGrace(p: PlayerState): void {
+    p.graceUntil = null;
+    this.cancelRoundOf(p, 'disconnected');
+    this.removePlayer(p, 'disconnected');
+  }
+
+  /** The idle limit frees the slot at once, with no grace. */
+  private expireIdle(p: PlayerState): void {
+    const conn = p.conn!;
+    this.closings.push({ conn, reason: 'idle' });
+    this.conns.delete(conn);
+    p.conn = null;
+    this.cancelRoundOf(p, 'disconnected');
+    this.removePlayer(p, 'idle');
+  }
+
+  private announceConnection(p: PlayerState, connected: boolean): void {
+    const room = this.roomOf(p);
+    room.revision++;
+    this.toRoom(
+      room,
+      { type: 'player.connection', payload: { playerId: p.card.id, connected, revision: room.revision } },
+      p.card.id,
+    );
   }
 
   // ---- state helpers ----
@@ -351,7 +631,37 @@ export class World {
   }
 
   private newRoom(id: RoomId, config: GameRoomConfig | null): RoomState {
-    return { id, config, members: [], revision: 0, status: 'waiting', sessionId: null, startedAt: null, score: null };
+    return {
+      id,
+      config,
+      members: [],
+      revision: 0,
+      status: 'waiting',
+      sessionId: null,
+      startedAt: null,
+      score: null,
+      round: null,
+      lastStateAt: 0,
+    };
+  }
+
+  /** Accepted positions of every character in the room, connected or not. */
+  private positions(room: RoomState): Vec3[] {
+    const out: Vec3[] = [];
+    for (const m of this.members(room)) if (m.position) out.push(m.position);
+    return out;
+  }
+
+  private gameState(room: RoomState): PortalPartnersState {
+    const round = room.round!;
+    return {
+      bridgeOpen: bridgeOpen(round, this.positions(room)),
+      latched: round.latched,
+      crystals: [round.crystals[0], round.crystals[1]],
+      startedAt: room.startedAt!,
+      durationSeconds: Math.round(this.config.roundMs / 1000),
+      serverTime: iso(this.now()),
+    };
   }
 
   private lobby(): RoomState {
@@ -420,7 +730,7 @@ export class World {
       roomId: room.id,
       summary: room.config ? this.summary(room) : null,
       players: this.members(room).map(presence),
-      session: null,
+      session: room.round ? { sessionId: room.round.sessionId, ...this.gameState(room) } : null,
       revision: room.revision,
     };
   }
@@ -463,6 +773,10 @@ export class World {
       if (p.conn !== null) this.send(p.conn, message);
     }
   }
+}
+
+function iso(ms: number): string {
+  return new Date(ms).toISOString();
 }
 
 function fail(code: ErrorCode, message: string): Result<null> {

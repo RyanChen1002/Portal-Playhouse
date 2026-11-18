@@ -1,85 +1,24 @@
 import { describe, expect, it } from 'vitest';
-import type { RoomSnapshot, RoomSummary, ServerMessage, Vec3 } from '../contracts';
-import { DEFAULT_WORLD_CONFIG, PORTAL_ROOM } from './config';
-import { card, conn, makeWorld, type TestWorld } from './test-helpers';
-
-const ENTRANCE = PORTAL_ROOM.entrance;
-const seqs = new WeakMap<TestWorld, Map<number, number>>();
-
-function nextSeq(tw: TestWorld, n: number): number {
-  let m = seqs.get(tw);
-  if (!m) seqs.set(tw, (m = new Map()));
-  const s = (m.get(n) ?? 0) + 1;
-  m.set(n, s);
-  return s;
-}
-
-function move(tw: TestWorld, n: number, position: Vec3, rotation = 0): number {
-  const sequence = nextSeq(tw, n);
-  tw.world.handle(conn(n), { type: 'player.move', payload: { sequence, position, rotation } });
-  return sequence;
-}
-
-/** Walks player n from `from` to `to` at a legal courtyard pace (0.4 units per 100 ms). */
-function walk(tw: TestWorld, n: number, from: Vec3, to: Vec3): void {
-  const dist = Math.hypot(to.x - from.x, to.z - from.z);
-  const steps = Math.ceil(dist / 0.4);
-  for (let i = 1; i <= steps; i++) {
-    tw.advanceBy(100);
-    const f = i / steps;
-    move(tw, n, { x: from.x + (to.x - from.x) * f, y: 0, z: from.z + (to.z - from.z) * f });
-  }
-}
-
-function admit(tw: TestWorld, n: number) {
-  return tw.world.admit(conn(n), card(n));
-}
-
-function admitAll(tw: TestWorld, count: number) {
-  for (let n = 1; n <= count; n++) expect(admit(tw, n).error).toBeNull();
-}
-
-function join(tw: TestWorld, n: number, roomId = 'portal') {
-  tw.world.handle(conn(n), { type: 'room.join', requestId: `j${n}`, payload: { roomId } });
-}
-
-function leave(tw: TestWorld, n: number) {
-  tw.world.handle(conn(n), { type: 'room.leave', requestId: `l${n}`, payload: {} });
-}
-
-function ready(tw: TestWorld, n: number, value = true) {
-  tw.world.handle(conn(n), { type: 'game.ready', requestId: `r${n}`, payload: { ready: value } });
-}
-
-/** Admits players 1..count, walks the given ones to the portal entrance and joins them. */
-function setup(count: number, joiners: number[] = []): TestWorld {
-  const tw = makeWorld();
-  admitAll(tw, count);
-  for (const n of joiners) {
-    walk(tw, n, { x: 0, y: 0, z: 4 }, ENTRANCE);
-    join(tw, n);
-  }
-  tw.clear();
-  return tw;
-}
-
-function only<T extends ServerMessage['type']>(msgs: ServerMessage[], type: T) {
-  return msgs.filter((m): m is Extract<ServerMessage, { type: T }> => m.type === type);
-}
-
-function lastReply(msgs: ServerMessage[]) {
-  const replies = msgs.filter((m) => m.type === 'request.accepted' || m.type === 'request.error');
-  return replies[replies.length - 1];
-}
-
-function errorCode(msgs: ServerMessage[]) {
-  const r = lastReply(msgs);
-  return r?.type === 'request.error' ? r.error.code : null;
-}
-
-function boards(msgs: ServerMessage[]): RoomSummary[] {
-  return only(msgs, 'room.updated').map((m) => m.payload.room);
-}
+import type { RoomSnapshot } from '../contracts';
+import { DEFAULT_WORLD_CONFIG } from './config';
+import {
+  admit,
+  admitAll,
+  boards,
+  card,
+  conn,
+  ENTRANCE,
+  errorCode,
+  join,
+  lastReply,
+  leave,
+  makeWorld,
+  move,
+  only,
+  ready,
+  setup,
+  walk,
+} from './test-helpers';
 
 describe('World', () => {
   it('admits 16 and rejects the 17th with WORLD_FULL', () => {
@@ -143,10 +82,18 @@ describe('World', () => {
     expect(errorCode(tw.messagesFor(conn(3)))).toBe('INVALID_ACTION');
     expectNothingElse();
 
-    // ROOM_LOCKED needs a playing room; rounds start in Task 6, which tests that step.
-
     tw.advanceBy(1000);
     move(tw, 3, { x: ENTRANCE.x + 3.0, y: 0, z: 0 });
+    ready(tw, 1);
+    ready(tw, 2);
+    tw.clear();
+    join(tw, 3);
+    expect(errorCode(tw.messagesFor(conn(3)))).toBe('ROOM_LOCKED');
+    expectNothingElse();
+
+    // The round times out; the room is waiting again with both players inside.
+    tw.advanceBy(180_000);
+    tw.world.advance();
     tw.clear();
     join(tw, 3);
     expect(errorCode(tw.messagesFor(conn(3)))).toBe('ROOM_FULL');

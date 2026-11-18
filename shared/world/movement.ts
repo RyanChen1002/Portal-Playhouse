@@ -37,9 +37,9 @@ function budgetCap(loc: Location): number {
   return speedOf(loc) * 1 + BUDGET_SLACK;
 }
 
-export function newTracker(position: Vec3, rotation: number, now: number): MoveTracker {
-  // The courtyard cap is the larger one; a tracker moving to the arena is clamped on first use.
-  return { position, rotation, budget: budgetCap('courtyard'), lastAt: now, lastSequence: -1 };
+export function newTracker(position: Vec3, rotation: number, now: number, loc: Location = 'courtyard'): MoveTracker {
+  // A full budget for the location the tracker starts in.
+  return { position, rotation, budget: budgetCap(loc), lastAt: now, lastSequence: -1 };
 }
 
 export function inBounds(loc: Location, p: Vec3): boolean {

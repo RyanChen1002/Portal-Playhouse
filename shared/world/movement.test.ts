@@ -68,6 +68,15 @@ describe('checkMove', () => {
     }
   });
 
+  it('starts with the cap of its location', () => {
+    expect(newTracker(origin, 0, 0).budget).toBeCloseTo(5.3);
+    expect(newTracker(origin, 0, 0, 'courtyard').budget).toBeCloseTo(5.3);
+    const arena = newTracker(origin, 0, 0, 'arena');
+    expect(arena.budget).toBeCloseTo(4.5);
+    expect(checkMove(arena, 'arena', 1, { x: 4.6, y: 0, z: 0 }, 0, 0).kind).toBe('rejected');
+    expect(checkMove(arena, 'arena', 1, { x: 4.5, y: 0, z: 0 }, 0, 0).kind).toBe('accepted');
+  });
+
   it('rejects when the barrier blocks without spending budget', () => {
     const t = newTracker(origin, 0, 0);
     const r = checkMove(t, 'courtyard', 1, { x: 1, y: 0, z: 0 }, 0, 0, () => true);
