@@ -29,3 +29,4 @@ __pycache__/
 # Supabase CLI local state
 supabase/.temp/
 supabase/.branches/
+supabase/signing_keys.json

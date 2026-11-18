@@ -32,6 +32,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate local signing keys
+        run: npm run db:keys
+
       - name: Start local Supabase stack
         run: npx supabase start -x "$SUPABASE_EXCLUDE"
 
