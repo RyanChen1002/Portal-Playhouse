@@ -86,8 +86,10 @@ describe('World rounds', () => {
       for (const n of [1, 2, 3]) expect(only(tw.messagesFor(conn(n)), 'game.state')).toEqual([]);
       ready(tw, order[1]);
 
-      const s1 = only(tw.messagesFor(conn(1)), 'game.state');
-      const s2 = only(tw.messagesFor(conn(2)), 'game.state');
+      const all1 = tw.messagesFor(conn(1));
+      const all2 = tw.messagesFor(conn(2));
+      const s1 = only(all1, 'game.state');
+      const s2 = only(all2, 'game.state');
       expect(s1).toHaveLength(1);
       expect(s2).toEqual(s1);
       const sid = s1[0]!.payload.sessionId;
@@ -101,7 +103,21 @@ describe('World rounds', () => {
         serverTime: iso(tw.now()),
       });
 
-      const b = boards(tw.messagesFor(conn(3)));
+      // Both participants get the room snapshot with spawn positions and the session.
+      for (const msgs of [all1, all2]) {
+        const rs = only(msgs, 'room.snapshot');
+        expect(rs).toHaveLength(1);
+        expect(rs[0]!.payload.players.map((p) => [p.id, p.position])).toEqual([
+          ['p1', SPAWN1],
+          ['p2', SPAWN2],
+        ]);
+        expect(rs[0]!.payload.session).toMatchObject({ sessionId: sid, bridgeOpen: false, durationSeconds: 180 });
+        expect(rs[0]!.payload.summary).toMatchObject({ status: 'playing', sessionId: sid });
+      }
+      const all3 = tw.messagesFor(conn(3));
+      expect(only(all3, 'room.snapshot')).toEqual([]);
+
+      const b = boards(all3);
       expect(b).toHaveLength(1);
       expect(b[0]).toMatchObject({
         status: 'playing',
@@ -130,6 +146,36 @@ describe('World rounds', () => {
       expect(snap.room.session).toMatchObject({ sessionId: sid, bridgeOpen: false, durationSeconds: 180 });
       expect(tw.world.takeFinishedRounds()).toEqual([]);
     }
+  });
+
+  it('a ready player in grace blocks the start until they return', () => {
+    const tw = setup(3, [1, 2]);
+    ready(tw, 1);
+    tw.world.connectionLost(conn(1));
+    ready(tw, 2);
+    expect(lastReply(tw.messagesFor(conn(2)))).toMatchObject({ type: 'request.accepted' });
+    tw.advanceBy(5_000);
+    tw.world.advance();
+    expect(boards(tw.messagesFor(conn(3)))).toEqual([]);
+    expect(only(tw.messagesFor(conn(2)), 'game.state')).toEqual([]);
+
+    // Dropping after both are ready does not start one either: the start is only re-evaluated on return.
+    tw.advanceBy(10_000);
+    tw.world.admit('c1b', card(1));
+    const s1 = only(tw.messagesFor('c1b'), 'game.state');
+    const s2 = only(tw.messagesFor(conn(2)), 'game.state');
+    expect(s1).toHaveLength(1);
+    expect(s2).toEqual(s1);
+    const b = boards(tw.messagesFor(conn(3)));
+    expect(b).toHaveLength(1);
+    expect(b[0]).toMatchObject({ status: 'playing', sessionId: s1[0]!.payload.sessionId });
+
+    // Another reconnect while playing starts nothing new.
+    tw.world.connectionLost('c1b');
+    tw.world.admit('c1c', card(1));
+    expect(only(tw.messagesFor('c1c'), 'game.state')).toEqual([]);
+    expect(boards(tw.messagesFor(conn(3)))).toEqual([]);
+    expect(tw.world.takeFinishedRounds()).toEqual([]);
   });
 
   it('a third player gets ROOM_LOCKED but sees the score on the board', () => {

@@ -147,6 +147,8 @@ export class World {
       this.conns.set(conn, player.id);
       if (restored) this.announceConnection(existing, true);
       this.send(conn, { type: 'world.snapshot', payload: this.worldSnapshot(existing) });
+      // A ready player in grace blocked the start; their return may complete it.
+      if (restored) this.maybeStartRound(this.roomOf(existing));
       return { data: null, error: null };
     }
 
@@ -442,11 +444,11 @@ export class World {
 
   // ---- rounds ----
 
-  /** Starts exactly one round when a waiting room holds two players who are all ready. */
+  /** Starts exactly one round when a waiting room holds two players who are all ready and connected. */
   private maybeStartRound(room: RoomState): void {
     const c = room.config;
     const ms = this.members(room);
-    if (!c || room.status !== 'waiting' || ms.length < c.minPlayers || !ms.every((m) => m.ready)) return;
+    if (!c || room.status !== 'waiting' || ms.length < c.minPlayers || !ms.every((m) => m.ready && m.conn !== null)) return;
     const [a, b] = ms;
     if (!a || !b || ms.length !== 2) return;
 
@@ -465,6 +467,8 @@ export class World {
       m.lastOutside = { ...at };
     });
     room.revision++;
+    const snapshot: ServerMessage = { type: 'room.snapshot', payload: this.roomSnapshot(room) };
+    for (const m of [a, b]) if (m.conn !== null) this.send(m.conn, snapshot);
     this.sendState(room);
     this.broadcastBoard(room);
   }
