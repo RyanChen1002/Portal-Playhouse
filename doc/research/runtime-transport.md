@@ -1,17 +1,20 @@
 # Research: Authoritative Runtime and Real-Time Transport
 
-**Version:** 0.2
+**Version:** 0.3
 
-**Date:** 11/15/2026
+**Date:** 11/17/2026
 
 **Author:** Adam, with AI-assisted research (Claude Code, model Claude Fable 5.2)
 
 **Status:** Research complete; **no decision made.** Runtime and transport are open decisions in the [initial spec](../initial-spec.md) (FR-12, §7, §8) and the [component contract](../component-contract.md) (§1, §5). The recommendation in §7 is a proposal for Ryan and Adam to decide. Record the outcome in the spec/contract change history.
 
+**Update (11/17/2026):** Adam is trying Option B (Durable Objects) on the `feature/runtime-transport` branch, with position-based movement (§3.2, option A). Both are tentative until Ryan approves that branch's pull request.
+
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/17/2026 | Added §3.2, comparing whether clients send positions or inputs, and recorded Adam's tentative choice of Durable Objects and position-based movement. |
 | 0.2 | 11/15/2026 | Added §3.1 and notes in §6 and §7 for the move toward free-roaming 3D movement, which strengthens the Durable Objects recommendation. Added a note on an 8-player cap. Earlier 0.1 entry: initial research with three options, four load scenarios, free-tier budgets, and a proposed recommendation. |
 
 ## 1. Question
@@ -56,6 +59,46 @@ The team is leaning toward 3D, free-roaming movement (11/15/2026), so the grid a
 - **Light server checks.** Speed caps, world bounds, and simple hit tests are enough. No server physics engine is needed.
 
 Free roaming also adds client-side prediction and interpolation, which is frontend work for Ryan.
+
+### 3.2 Movement authority: positions or inputs
+
+Added 11/17/2026 while designing the runtime. This section compares two ways to divide movement between client and server. **A:** the client sends its position and the server validates it. **B:** the client sends key presses (inputs) and the server simulates movement. Adam chose **A** for the runtime design, tentatively, pending Ryan's approval. It replaces the "inputs on change" recommendation in §3.1 and §8 item 4.
+
+**How it feels to play**
+
+- **A:** the player's own character responds instantly, as in the current frontend preview. Other players appear about 50–150 ms behind, smoothed by interpolation, which is normal and rarely noticed.
+- **B:** the server owns the position, so the client must either wait or predict. Waiting adds a round trip (roughly 80–150 ms from a home connection, estimated) to every key press. That is playable for a slow co-op puzzle but noticeable, and it feels wrong in the lobby. Predicting (move immediately using the same rules, then correct to the server) feels like A. It is the hardest part of multiplayer networking: sequence numbers, replaying unconfirmed inputs, and smoothing corrections without jitter.
+
+**Cheating and integrity**
+
+- **A:** a modified client can report any position within the speed cap. It could slide through lobby furniture or cut through a game-room wall the server does not check. The server checks a speed cap, world and room bounds, entry into rooms only through admission, and game-critical barriers such as the Portal Partners bridge gap. Win conditions (pressure plate, lever, crystals, exit) are judged on the server from accepted positions. The realistic worst case is a shortcut in a co-op game.
+- **B:** the client cannot place itself; the only cheat is precise input timing. This is the textbook anti-cheat design, but it buys little in a cooperative class project.
+
+**Work for each side**
+
+| | A: positions | B: inputs |
+| --- | --- | --- |
+| Server movement code | Validation only (speed, bounds, room walls, bridge gap); small and easy to test | A full movement simulation at about 20 ticks per second, with collision against the lobby and room layouts |
+| Map data on the server | Bounds, doorways, and game-critical barriers only | Every collidable object in the courtyard and the game rooms |
+| Keeping server and client geometry in sync | Rarely needed | Every frontend layout change must be mirrored, which in practice means a shared layout module imported by both |
+| Client (Ryan) | Keep existing movement; send position while moving; interpolate others; accept occasional corrections | Send input changes; accept input delay or build prediction and reconciliation; interpolate others |
+| Reuse of the PR #21 Portal Partners rules | Game logic reused; movement stays on the client | `move()` in `frontend/games/rules.js` already simulates from inputs with room collision, so it ports almost directly |
+| Contract | `player.move` changes from `{sequence, input}` to a position and facing | Matches the contract as written |
+
+**Messages and the free allowance (§6.2)**
+
+- **A:** about 10 messages per second per moving player. A 16-player lobby with 4 moving has about 14 hours per day before the free limit; all 16 moving nonstop, about 3.5 hours. The two-player milestone is effectively unlimited. Dev and production share the allowance.
+- **B:** messages only when a key goes down or up, about 1–3 per second per moving player, roughly 5–10 times the headroom. The server's 20 Hz broadcast is outgoing and therefore free.
+- Duration is about the same either way: the object stays awake whenever players are online, and the daily allowance covers one object running continuously.
+
+**Consistency and testing**
+
+- **A:** two clients may briefly disagree on cosmetic lobby details, such as where someone stands beside a chair. Game events use the server's accepted positions, so outcomes always match.
+- **B:** one deterministic simulation is easy to unit-test; the bugs move into client prediction, which is harder to test.
+
+**Middle option (not chosen):** positions in the lobby and inputs in the game room. The lobby is low-stakes and furniture-heavy; the game room is small and its collision already exists in `rules.js`. The cost is two movement modes on the client, and slightly slower-feeling movement in the game room without prediction.
+
+**Why A was chosen:** it is the least total work, it keeps the frontend movement already tuned, and the server still owns everything that decides an outcome. B's case is the contract's existing shape, the lowest message volume, and a stronger exercise in server authority, at the cost of substantial frontend prediction work or noticeable input lag.
 
 ## 4. Platform facts
 

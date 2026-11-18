@@ -1,13 +1,14 @@
 # Portal Playhouse — Initial Specification
 
-**Version:** 0.4
+**Version:** 0.5
 
-**Date:** 11/15/2026
+**Date:** 11/17/2026
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.5 | 11/17/2026 | Pointers to the [runtime design](specs/2026-11-17-runtime-transport-design.md) (proposed by Adam; tentative until Ryan approves the pull request): the tentative runtime choice in FR-12, §7, and §8; removed "reconnect slot retention" and "disconnect timing" from the blockers; Portal Partners named as the first networked game. No other requirements changed. |
 | 0.4 | 11/15/2026 | Aligned authentication wording with merged PR #18. First game and multiplayer runtime remain open. |
 | 0.3 | 11/13/2026 | Replaced the previous character-style reference with the original local-preview roster selected by Ryan. Kept 20 avatar choices. |
 | 0.2 | 11/11/2026 | Standardized history dates and columns; removed approval status fields and updated the document version. Requirements unchanged. |
@@ -17,7 +18,7 @@
 
 A browser-based 3D world where friends and classmates meet and play mini-games. Initial scope: accounts, a saved profile, a shared lobby, a room board, one two-player cooperative game, and persistent results.
 
-Source: Ryan's updated meeting notes and November 8 clarification. **Confirmed direction:** Supabase Auth/database, Vercel frontend hosting, separate dev/production environments, 20 avatar choices, an initial 16-player limit across the whole world (lobby and all game rooms), and Superpowers workflow. **First mini-game: TBD.** Colored-tile gameplay is an idea only.
+Source: Ryan's updated meeting notes and November 8 clarification. **Confirmed direction:** Supabase Auth/database, Vercel frontend hosting, separate dev/production environments, 20 avatar choices, an initial 16-player limit across the whole world (lobby and all game rooms), and Superpowers workflow. **First networked mini-game: Portal Partners** (see the [runtime design](specs/2026-11-17-runtime-transport-design.md), tentative until Ryan approves the pull request). Colored-tile gameplay is an idea only.
 
 The [component contract](component-contract.md) owns interfaces. This spec owns product requirements. Ryan and Adam approved this initial spec, including the PR #2 review clarifications. Proposed defaults below still need explicit agreement.
 
@@ -36,13 +37,13 @@ Register or sign in, load a profile, choose an avatar, enter the 3D lobby, check
 | FR-05 | Board shows room availability, configured minimum/maximum players, participant display names, current score, and timing. **Proposed:** elapsed time from authoritative round start; remaining time only for timed games. |
 | FR-06 | Each game has configurable minimum/maximum players. The first game requires exactly two players; other game sizes are future extensions. |
 | FR-07 | Start when both required players are ready. Lock participation while playing; other authenticated users may read board score/status, but in-room spectator mode is deferred. |
-| FR-08 | Deliver one complete cooperative game with explicit controls, legal actions, win/loss, scoring, and replay behavior. **Game and rules TBD.** |
+| FR-08 | Deliver one complete cooperative game with explicit controls, legal actions, win/loss, scoring, and replay behavior. **First networked game: Portal Partners; rules in the [runtime design](specs/2026-11-17-runtime-transport-design.md) §6.** |
 | FR-09 | Persist results in a separate Supabase result table per game type and show personal history and total wins. **Proposed:** each winning participant gets one win per unique completed session; losses/cancellations add none. |
 | FR-10 | Show clear errors for invalid actions, full/locked rooms, authentication failures, disconnects, and storage failures. A rejected room join preserves the previous location. |
 | FR-11 | First release targets desktop browsers and keyboard controls. Camera view, controls, supported browsers, and exact layouts are open. |
-| FR-12 | Vercel hosts the UI with separate dev/production configuration and separate Supabase environments. Exact frontend framework and authoritative game runtime/transport remain open. |
+| FR-12 | Vercel hosts the UI with separate dev/production configuration and separate Supabase environments. Exact frontend framework remains open. The authoritative runtime is **tentatively** a Cloudflare Worker plus one World Durable Object over WebSocket; see the [runtime design](specs/2026-11-17-runtime-transport-design.md), pending Ryan's approval of the pull request. |
 
-**Proposed disconnect policy:** Cancel the active two-player round when a participant explicitly leaves or is declared disconnected; explain why, award no win, and offer return to the lobby. Timeout, reconnect grace, and slot retention during reconnect require agreement.
+**Proposed disconnect policy:** Cancel the active two-player round when a participant explicitly leaves or is declared disconnected; explain why, award no win, and offer return to the lobby. The runtime design proposes a 20-second reconnect grace that retains the slot and position, with per-game settings; it is tentative until Ryan approves ([design §5.6](specs/2026-11-17-runtime-transport-design.md)).
 
 ## 4. Scope Boundaries
 
@@ -79,12 +80,12 @@ Both options keep Vercel for UI and Supabase for Auth/persistence:
 - **Dedicated authoritative game service:** Clear server ownership of movement/game loops, but adds another runtime to host and operate.
 - **Supabase-centered commands/functions plus realtime delivery:** Fewer services, but authoritative action ordering, timing, validation, and concurrency need a feasibility check for the chosen game.
 
-Neither approach is selected. Vercel UI hosting and Supabase storage alone do not define the authoritative multiplayer runtime. Decide after selecting game mechanics; do not assume a persistent socket server runs inside ordinary frontend requests.
+Neither of these two approaches is the proposed choice: the [runtime design](specs/2026-11-17-runtime-transport-design.md) tentatively selects a third, a Cloudflare Worker plus one World Durable Object, pending Ryan's approval of the pull request. Vercel UI hosting and Supabase storage alone do not define the authoritative multiplayer runtime. Do not assume a persistent socket server runs inside ordinary frontend requests.
 
 ## 8. Course Milestones and Open Decisions
 
 Milestones: review spec/contract -> accounts/profile -> two-user lobby/board/rooms -> game/results -> 3+ and full-capacity verification -> class-access deployment. Insert the course-required midpoint component swap at the actual scheduled point, with agreed additions in each other's components. Dates and swap features remain TBD. Class access is required 1–2 weeks before presentation.
 
-Implementation blockers: first game/rules; runtime/transport/framework; reconnect slot retention; disconnect/retry timing; controls/camera/browsers; board timing and win-count defaults; exact schemas. Ryan selected the current original character roster; final production artwork review, performance targets, dates, and swap work remain open.
+Implementation blockers: frontend framework; controls/camera/browsers; runtime/transport is tentatively decided in the [runtime design](specs/2026-11-17-runtime-transport-design.md), pending Ryan's approval; board timing and win-count defaults; exact schemas. Ryan selected the current original character roster; final production artwork review, performance targets, dates, and swap work remain open.
 
 Use Superpowers for subsequent design/planning. Keep this as the single initial spec rather than duplicating it under another documentation tree. Do not write a detailed game implementation plan until its design is approved.
