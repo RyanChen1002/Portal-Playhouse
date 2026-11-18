@@ -557,6 +557,35 @@ describe('World rounds', () => {
     expect(tw.now() - t0).toBe(185_000);
   });
 
+  it('notePersistence updates lastFinished for a reconnect; a mismatched session changes nothing', () => {
+    const { tw, sid } = startGame();
+    tw.advanceBy(170_000);
+    tw.world.connectionLost(conn(1));
+    tw.advanceBy(15_000);
+    tw.world.advance(); // the round times out as a loss while player 1 is in grace
+    tw.clear();
+    tw.world.notePersistence('other-session', 'saved');
+    expect(tw.messagesFor(conn(2))).toEqual([]);
+    tw.world.notePersistence(sid, 'saved');
+    tw.world.notePersistence(sid, 'failed'); // never downgrades saved
+    expect(tw.messagesFor(conn(2))).toEqual([]);
+    tw.world.admit('c1b', card(1));
+    const snap = snapshotOf(tw.messagesFor('c1b'));
+    expect(snap.lastFinished).toEqual({ sessionId: sid, outcome: 'loss', score: 0, persistenceStatus: 'saved' });
+  });
+
+  it('notePersistence ignores a session that does not match lastFinished', () => {
+    const { tw, sid } = startGame();
+    tw.advanceBy(170_000);
+    tw.world.connectionLost(conn(1));
+    tw.advanceBy(15_000);
+    tw.world.advance();
+    tw.world.notePersistence('other-session', 'failed');
+    tw.world.admit('c1b', card(1));
+    const snap = snapshotOf(tw.messagesFor('c1b'));
+    expect(snap.lastFinished).toEqual({ sessionId: sid, outcome: 'loss', score: 0, persistenceStatus: 'pending' });
+  });
+
   it('idle limit', () => {
     const tw = makeWorld();
     admitAll(tw, 2);

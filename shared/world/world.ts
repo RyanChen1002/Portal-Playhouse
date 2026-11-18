@@ -246,6 +246,18 @@ export class World {
     return out;
   }
 
+  /**
+   * Records the save outcome in the participants' `lastFinished`, so a later snapshot shows
+   * it. Sends nothing (the adapter sends `result.saved` / `failed`); never downgrades `saved`.
+   */
+  notePersistence(sessionId: string, status: 'saved' | 'failed'): void {
+    for (const p of this.players.values()) {
+      const last = p.lastFinished;
+      if (!last || last.sessionId !== sessionId || last.persistenceStatus === 'saved') continue;
+      p.lastFinished = { ...last, persistenceStatus: status };
+    }
+  }
+
   needsTimer(): boolean {
     return this.players.size > 0;
   }

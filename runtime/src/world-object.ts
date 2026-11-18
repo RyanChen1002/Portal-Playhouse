@@ -391,6 +391,7 @@ export class WorldObject extends DurableObject<Env> {
         log('result.save_failed', { code: r.error.code });
         const { failedStatusReached } = this.results.markFailed(round.sessionId);
         if (failedStatusReached) {
+          this.world.notePersistence(round.sessionId, 'failed');
           this.toParticipants(round, {
             type: 'game.finished',
             payload: {
@@ -404,6 +405,7 @@ export class WorldObject extends DurableObject<Env> {
         }
       } else {
         this.results.markSaved(round.sessionId);
+        this.world.notePersistence(round.sessionId, 'saved');
         this.toParticipants(round, {
           type: 'result.saved',
           payload: { sessionId: round.sessionId, resultId: r.data.resultId },

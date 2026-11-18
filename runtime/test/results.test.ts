@@ -140,6 +140,24 @@ describe('result saving', () => {
     expect(fake.recordCalls()[0]).toMatchObject({ session_id: sessionId, outcome: 'cancelled', cancel_reason: 'left' });
   });
 
+  it('a participant who reconnects after result.saved sees saved in the snapshot', async () => {
+    const stub = freshWorld();
+    const { b, sb, sessionId } = await playCancelledRound(stub);
+    await sb.next('result.saved');
+    sb.ws.close(1000, 'gone');
+    await sb.closed;
+    const again = await joinAs(stub, b);
+    sockets.push(again);
+    const snap = again.received.find((m) => m.type === 'world.snapshot');
+    expect(snap?.type === 'world.snapshot' && snap.payload.lastFinished).toEqual({
+      sessionId,
+      outcome: 'cancelled',
+      score: 0,
+      persistenceStatus: 'saved',
+      reason: 'left',
+    });
+  });
+
   it('retries after 5 s, then 30 s, and saves on the third attempt', async () => {
     const stub = freshWorld();
     const clock = await fakeClock(stub);
@@ -179,11 +197,15 @@ describe('result saving', () => {
       s.received.filter((m) => m.type === 'game.finished' && m.payload.persistenceStatus === 'failed');
 
     // Follow the alarm until the first failure at least an hour after the first one.
+    const gaps: number[] = [];
     while (clock.t - t0 < FAILED_AFTER_MS) {
       expect(failedFor(sb)).toHaveLength(0);
-      clock.t = (await alarmAt(stub))!;
+      const at = (await alarmAt(stub))!;
+      gaps.push(at - clock.t);
+      clock.t = at;
       expect(await runDurableObjectAlarm(stub)).toBe(true);
     }
+    expect(gaps.slice(0, 4)).toEqual([5_000, 30_000, 120_000, RETRY_FOREVER_MS]);
     for (const s of [sa, sb]) {
       const failed = await s.next('game.finished', (m) => m.type === 'game.finished' && m.payload.persistenceStatus === 'failed');
       expect(finishedOf(failed)).toEqual({ sessionId, outcome: 'cancelled', score: 0, persistenceStatus: 'failed', reason: 'left' });
