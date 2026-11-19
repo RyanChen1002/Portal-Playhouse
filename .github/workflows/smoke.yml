@@ -1,0 +1,35 @@
+name: Smoke test
+
+# Runs after Vercel reports a finished deployment, or by hand with a URL.
+# Frontend only; the Cloudflare runtime is not covered. See doc/checklists/vercel-smoke-test.md.
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Deployment URL to check (https://...)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    # For deployment_status, run only for successful deployments.
+    if: github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Smoke test the deployment
+        env:
+          # Passed through env, never interpolated into the shell command.
+          SMOKE_BASE_URL: ${{ github.event.inputs.url || github.event.deployment_status.environment_url }}
+          # Optional. Leave the secret unset if Deployment Protection is off.
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: node scripts/smoke-frontend.mjs
