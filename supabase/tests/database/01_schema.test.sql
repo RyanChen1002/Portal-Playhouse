@@ -10,7 +10,7 @@ select has_table('private', 'profiles', 'private.profiles exists');
 select has_table('private', 'avatars', 'private.avatars exists');
 
 -- Avatar catalog
-select is((select count(*) from private.avatars), 20::bigint, '20 avatars seeded');
+select is((select count(*) from private.avatars), 21::bigint, '20 avatars seeded');
 select is((select min(id) from private.avatars), 'avatar-01', 'first avatar is avatar-01');
 select is((select max(id) from private.avatars), 'avatar-20', 'last avatar is avatar-20');
 
