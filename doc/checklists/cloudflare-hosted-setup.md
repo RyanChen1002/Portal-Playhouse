@@ -6,7 +6,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. After review: hosted mode accepts only the dev hosts from `runtime/wrangler.jsonc`, a first run uses 17 auth calls, and other players in the lobby produce a warning (`RATE_LIMITED` added to "If it fails"). Then, at Adam's request: connections that close during a run are reported with their reasons (and named as the cause of missing moves), and the event-loop line notes the 10 ms sampling interval. `LOAD_EMAIL` and `LOAD_PASSWORD` now go in `.env.development.local` instead of the command line, to keep the password out of shell history. Recorded Adam's 60-second local and hosted dev runs with commentary on the hosted results and ticked steps 1 and 2; the dashboard CPU and duration are still to be recorded (step 3). Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
+| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. After review: hosted mode accepts only the dev hosts from `runtime/wrangler.jsonc`, a first run uses 17 auth calls, and other players in the lobby produce a warning (`RATE_LIMITED` added to "If it fails"). Then, at Adam's request: connections that close during a run are reported with their reasons (and named as the cause of missing moves), and the event-loop line notes the 10 ms sampling interval. `LOAD_EMAIL` and `LOAD_PASSWORD` now go in `.env.development.local` instead of the command line, to keep the password out of shell history. Recorded Adam's 60-second local and hosted dev runs with commentary on the hosted results and ticked steps 1 to 3, with the Worker's dashboard CPU and wall time read from Adam's screenshots and commentary on the Free-plan limits. Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
 | 0.1 | 11/18/2026 | Created the manual checklist for the hosted dev runtime (`portal-runtime-dev`): wrangler login, `env.dev` vars, the Worker secret, the hosted dev migration, the first deploy, a scripted smoke check, and handing the runtime URL to Ryan. Production stays deferred until launch. The load check is deferred. |
 
 These are manual steps for Adam. Agents never run `wrangler login`, `wrangler secret put`, or `wrangler deploy`, and never run Supabase commands with `--remote`. The design is in [section 5.1 of the runtime spec](../specs/2026-11-17-runtime-transport-design.md) (environments) and [section 10](../specs/2026-11-17-runtime-transport-design.md) (smoke check and hosted setup). Hosted Supabase steps are in the [hosted Supabase setup checklist](supabase-hosted-setup.md).
@@ -163,9 +163,9 @@ npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted
   - On the first run it signs up `you+load01@your-domain` to `you+load16@your-domain` (display names `Load01` to `Load16`) and prints each one created; that is 17 auth calls. Later runs sign in as the same users with the same `LOAD_PASSWORD` (16 calls). Keep these users: deleting them just means the next run creates them again.
   - Run it when nobody else is in the hosted lobby. If others are there, each affected scenario prints a `WARNING:` naming how many, because their messages distort the rates.
   - The default run (three scenarios, 60 s each) sends about 13,200 messages, about 700 of the 100,000 daily free requests. Don't loop it.
-  - **Dashboard:** for each scenario's printed UTC window, open **Workers & Pages → portal-runtime-dev → Metrics** (Durable Objects) and note CPU time and wall-clock duration.
+  - **Dashboard:** open **Workers & Pages → portal-runtime-dev → Metrics**. The CPU Time and Wall Time charts show per-request percentiles (P50 to P999) in one-minute buckets, in your local time zone. Hover each bucket in the run's window and note the tooltip values. Each WebSocket connection counts as one request, lasting the whole scenario.
   - **If it fails:** `RATE_LIMITED` means hosted Supabase's sign-in limit (about 30 per 5 minutes per IP) was reached; wait 5 minutes and rerun, and users already created will just sign in. `WORLD_FULL` means others (for example Ryan testing) are using slots; rerun later or with `--scenario baseline`. `could not sign in or sign up (EMAIL_TAKEN)` on a later run means `LOAD_PASSWORD` differs from the first run's. `DISPLAY_NAME_TAKEN` means another account already uses a `LoadNN` name.
-- [ ] 3. **Record results** here and in the pull request: date, initials, mode (local or hosted), rate, and for each scenario: incoming/s, outgoing/s, delay p95, hours/day, warnings (if any), and for hosted runs the dashboard CPU and duration.
+- [x] 3. **Record results** here and in the pull request: date, initials, mode (local or hosted), rate, and for each scenario: incoming/s, outgoing/s, delay p95, hours/day, warnings (if any), and for hosted runs the dashboard CPU and duration.
   - 11/21/2026, Claude (agent, local, 5 s per scenario, 10 Hz, quick check only): baseline 19.6/s in, 19.6/s out, p95 2 ms, 28.3 h/day; full 156.8/s in, 2,352/s out, p95 26 ms, 3.5 h/day; quarter 39.2/s in, 588/s out, p95 9 ms, 14.2 h/day. No warnings.
   - 11/21/2026, AL, **local**, 60 s per scenario, 10 Hz. No warnings; 100% delivery; no corrections, request errors, reconnects, closes, or other players.
 
@@ -175,7 +175,7 @@ npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted
     | full (16, 16 moving) | 159.2 | 2,388 | 12 / 23 / 91 ms | 3.5 |
     | quarter (16, 4 moving) | 39.8 | 597 | 5 / 10 / 60 ms | 14.0 |
 
-  - 11/21/2026, AL, **hosted dev** (`portal-runtime-dev` and the dev Supabase project), 60 s per scenario, 10 Hz, windows 17:59:13 to 18:02:17 UTC. No warnings; 100% delivery; no corrections, request errors, reconnects, closes, or other players. Dashboard CPU time and duration: *not yet recorded*.
+  - 11/21/2026, AL, **hosted dev** (`portal-runtime-dev` and the dev Supabase project), 60 s per scenario, 10 Hz, windows 17:59:13 to 18:02:17 UTC. No warnings; 100% delivery; no corrections, request errors, reconnects, closes, or other players. Dashboard values are below the commentary.
 
     | Scenario | Incoming/s | Outgoing/s | Delay p50 / p95 / max | Hours/day | Generator event-loop p99 / max |
     | --- | --- | --- | --- | --- | --- |
@@ -189,7 +189,23 @@ npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted
     - **Delay is mostly network, not server load.** Hosted p50 is about 29 ms with only 2 players (local: 2 ms), so that is the round trip through Cloudflare. Going from 2 to 16 moving players added about 4 ms at p50 and 10 ms at p95. For comparison, a 10 Hz move interval is 100 ms.
     - **The max delays (206 and 157 ms) are probably the load generator, not the server.** Those same scenarios show generator event-loop maximums of 98.6 and 122 ms, while the p99 stayed near the 10 ms sampling interval. That pattern fits brief pauses on this machine, for example garbage collection while it tracks 143,000 deliveries, rather than the server. Not confirmed.
     - **The free-tier hours are the worst case.** 3.5 hours/day assumes all 16 players moving all the time. Real play is likely nearer the quarter scenario (about 14 hours/day). The daily allowance is per Cloudflare account, so dev and production would share it unless they use separate accounts (research §6.2).
-    - **Still open:** the Durable Object's CPU time and duration from the dashboard. Also, whether to call 16 players "supported" for FR-03 and AC-02 is a team decision. These runs measured a moving lobby only, not games in progress.
+    - **Still open:** whether to call 16 players "supported" for FR-03 and AC-02 is a team decision. These runs measured a moving lobby only, not games in progress.
+
+    **Dashboard (Workers & Pages → portal-runtime-dev → Metrics)**, read from chart tooltips by Claude from Adam's screenshots. One-minute buckets are in Central time (UTC−6). Mapping each bucket to the scenario that started in that minute is an assumption.
+
+    | Bucket (CST) | Likely scenario | CPU time P50 / P90 / P99 / P999 | Wall time P50 / P90 / P99 / P999 |
+    | --- | --- | --- | --- |
+    | 11:59 | baseline | 0.56 / 1.33 / 1.33 / 1.33 ms | about 61 / 61 / 61 / 61 s |
+    | 12:00 | full | 0.56 / 1.05 / 1.43 / 1.43 ms | about 61 / 61 / 61 / 61 s |
+    | 12:01 | quarter | 0.64 / 0.88 / 0.94 / 0.94 ms | 61 / 62 / 62 / 62 s |
+
+    Over the 30-minute view: CPU P50 0.59, P90 1.09, P99 1.23, P999 1.23 ms.
+
+    **Commentary (dashboard).**
+    - **Wall time** of about 61 s per request is each WebSocket connection held open for the whole scenario (60 s plus the 0.5 s settle and leaving). That is expected. Workers have no wall-time limit for HTTP requests, which these connections are.
+    - **CPU time** is at most 1.43 ms per connection, against the Workers Free plan's 10 ms CPU per request, so at least 7 times headroom.
+    - **Caveat:** these charts are the Worker's (`portal-runtime-dev`), and about 1 ms of CPU for a 60-second, 16-player connection suggests they cover only the front-door Worker that forwards each socket. They probably do not include the World Durable Object's processing of the moves. Cloudflare's docs do not say either way. The Durable Object's own metrics, under **Compute → Durable Objects**, were not recorded. The Durable Objects limits page gives 30 s of CPU per request or WebSocket message (each message resets it), far above anything a move handler needs. The docs are inconsistent on whether the Free plan's 10 ms also applies to Durable Objects.
+    - **Duration (GB-s):** the World object uses standard WebSockets, not hibernation, plus a 100 ms tick. So it is billed as awake whenever anyone is connected, regardless of how many players there are. The Free plan's 13,000 GB-s per day at 128 MB is about 28 object-hours per day (research §6.2). The binding daily limit is therefore requests (3.5 hours with all 16 moving), not duration.
 
 ## Production runtime (at first launch)
 
