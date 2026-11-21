@@ -6,7 +6,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. After review: hosted mode accepts only the dev hosts from `runtime/wrangler.jsonc`, a first run uses 17 auth calls, and other players in the lobby produce a warning (`RATE_LIMITED` added to "If it fails"). Then, at Adam's request: connections that close during a run are reported with their reasons (and named as the cause of missing moves), and the event-loop line notes the 10 ms sampling interval. Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
+| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. After review: hosted mode accepts only the dev hosts from `runtime/wrangler.jsonc`, a first run uses 17 auth calls, and other players in the lobby produce a warning (`RATE_LIMITED` added to "If it fails"). Then, at Adam's request: connections that close during a run are reported with their reasons (and named as the cause of missing moves), and the event-loop line notes the 10 ms sampling interval. `LOAD_EMAIL` and `LOAD_PASSWORD` now go in `.env.development.local` instead of the command line, to keep the password out of shell history. Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
 | 0.1 | 11/18/2026 | Created the manual checklist for the hosted dev runtime (`portal-runtime-dev`): wrangler login, `env.dev` vars, the Worker secret, the hosted dev migration, the first deploy, a scripted smoke check, and handing the runtime URL to Ryan. Production stays deferred until launch. The load check is deferred. |
 
 These are manual steps for Adam. Agents never run `wrangler login`, `wrangler secret put`, or `wrangler deploy`, and never run Supabase commands with `--remote`. The design is in [section 5.1 of the runtime spec](../specs/2026-11-17-runtime-transport-design.md) (environments) and [section 10](../specs/2026-11-17-runtime-transport-design.md) (smoke check and hosted setup). Hosted Supabase steps are in the [hosted Supabase setup checklist](supabase-hosted-setup.md).
@@ -144,13 +144,18 @@ Spec §10's load row; design in the [load-check design](../specs/2026-11-21-load
 Scenarios (all players in the lobby): `baseline` 2 players, both moving; `full` 16 players, all moving; `quarter` 16 players, 4 moving. Options: `--scenario <name>` (repeatable; default all three), `--duration <seconds>` (default 60 per scenario), `--rate <hz>` (1 to 20, default 10).
 
 - [ ] 1. **Local run.** With the local stack running (`npm run db:start`): `npx tsx scripts/load-check.ts`. It starts its own local runtime and creates its own local test accounts; it takes about 4 minutes. Add `--duration 5` for a quick check that it works.
-- [ ] 2. **Hosted dev run** (Adam, manually; agents never run it). At the repository root with `.env.development.local` (it holds `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for hosted dev):
+- [ ] 2. **Hosted dev run** (Adam, manually; agents never run it). At the repository root, with `.env.development.local`. It already holds `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for hosted dev. Once, add the load-check user's email and password there, not on the command line, so the password stays out of shell history. The file is Git-ignored (`.env.*`).
+
+```sh
+LOAD_EMAIL=you@your-domain
+LOAD_PASSWORD=<choose a password used only for these test users>
+```
+
+Then run:
 
 ```sh
 RUNTIME_URL=wss://portal-runtime-dev.<subdomain>.workers.dev/connect \
 RUNTIME_ORIGIN=http://127.0.0.1:4173 \
-LOAD_EMAIL=you@your-domain \
-LOAD_PASSWORD='<choose a password; keep it out of Git>' \
 npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted
 ```
 
