@@ -6,7 +6,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. After review: hosted mode accepts only the dev hosts from `runtime/wrangler.jsonc`, a first run uses 17 auth calls, and other players in the lobby produce a warning (`RATE_LIMITED` added to "If it fails"). Then, at Adam's request: connections that close during a run are reported with their reasons (and named as the cause of missing moves), and the event-loop line notes the 10 ms sampling interval. `LOAD_EMAIL` and `LOAD_PASSWORD` now go in `.env.development.local` instead of the command line, to keep the password out of shell history. Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
+| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. After review: hosted mode accepts only the dev hosts from `runtime/wrangler.jsonc`, a first run uses 17 auth calls, and other players in the lobby produce a warning (`RATE_LIMITED` added to "If it fails"). Then, at Adam's request: connections that close during a run are reported with their reasons (and named as the cause of missing moves), and the event-loop line notes the 10 ms sampling interval. `LOAD_EMAIL` and `LOAD_PASSWORD` now go in `.env.development.local` instead of the command line, to keep the password out of shell history. Recorded Adam's 60-second local and hosted dev runs with commentary on the hosted results and ticked steps 1 and 2; the dashboard CPU and duration are still to be recorded (step 3). Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
 | 0.1 | 11/18/2026 | Created the manual checklist for the hosted dev runtime (`portal-runtime-dev`): wrangler login, `env.dev` vars, the Worker secret, the hosted dev migration, the first deploy, a scripted smoke check, and handing the runtime URL to Ryan. Production stays deferred until launch. The load check is deferred. |
 
 These are manual steps for Adam. Agents never run `wrangler login`, `wrangler secret put`, or `wrangler deploy`, and never run Supabase commands with `--remote`. The design is in [section 5.1 of the runtime spec](../specs/2026-11-17-runtime-transport-design.md) (environments) and [section 10](../specs/2026-11-17-runtime-transport-design.md) (smoke check and hosted setup). Hosted Supabase steps are in the [hosted Supabase setup checklist](supabase-hosted-setup.md).
@@ -143,8 +143,8 @@ Spec §10's load row; design in the [load-check design](../specs/2026-11-21-load
 
 Scenarios (all players in the lobby): `baseline` 2 players, both moving; `full` 16 players, all moving; `quarter` 16 players, 4 moving. Options: `--scenario <name>` (repeatable; default all three), `--duration <seconds>` (default 60 per scenario), `--rate <hz>` (1 to 20, default 10).
 
-- [ ] 1. **Local run.** With the local stack running (`npm run db:start`): `npx tsx scripts/load-check.ts`. It starts its own local runtime and creates its own local test accounts; it takes about 4 minutes. Add `--duration 5` for a quick check that it works.
-- [ ] 2. **Hosted dev run** (Adam, manually; agents never run it). At the repository root, with `.env.development.local`. It already holds `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for hosted dev. Once, add the load-check user's email and password there, not on the command line, so the password stays out of shell history. The file is Git-ignored (`.env.*`).
+- [x] 1. **Local run.** With the local stack running (`npm run db:start`): `npx tsx scripts/load-check.ts`. It starts its own local runtime and creates its own local test accounts; it takes about 4 minutes. Add `--duration 5` for a quick check that it works.
+- [x] 2. **Hosted dev run** (Adam, manually; agents never run it). At the repository root, with `.env.development.local`. It already holds `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for hosted dev. Once, add the load-check user's email and password there, not on the command line, so the password stays out of shell history. The file is Git-ignored (`.env.*`).
 
 ```sh
 LOAD_EMAIL=you@your-domain
@@ -167,6 +167,29 @@ npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted
   - **If it fails:** `RATE_LIMITED` means hosted Supabase's sign-in limit (about 30 per 5 minutes per IP) was reached; wait 5 minutes and rerun, and users already created will just sign in. `WORLD_FULL` means others (for example Ryan testing) are using slots; rerun later or with `--scenario baseline`. `could not sign in or sign up (EMAIL_TAKEN)` on a later run means `LOAD_PASSWORD` differs from the first run's. `DISPLAY_NAME_TAKEN` means another account already uses a `LoadNN` name.
 - [ ] 3. **Record results** here and in the pull request: date, initials, mode (local or hosted), rate, and for each scenario: incoming/s, outgoing/s, delay p95, hours/day, warnings (if any), and for hosted runs the dashboard CPU and duration.
   - 11/21/2026, Claude (agent, local, 5 s per scenario, 10 Hz, quick check only): baseline 19.6/s in, 19.6/s out, p95 2 ms, 28.3 h/day; full 156.8/s in, 2,352/s out, p95 26 ms, 3.5 h/day; quarter 39.2/s in, 588/s out, p95 9 ms, 14.2 h/day. No warnings.
+  - 11/21/2026, AL, **local**, 60 s per scenario, 10 Hz. No warnings; 100% delivery; no corrections, request errors, reconnects, closes, or other players.
+
+    | Scenario | Incoming/s | Outgoing/s | Delay p50 / p95 / max | Hours/day |
+    | --- | --- | --- | --- | --- |
+    | baseline (2, 2 moving) | 19.9 | 19.9 | 2 / 3 / 5 ms | 27.9 |
+    | full (16, 16 moving) | 159.2 | 2,388 | 12 / 23 / 91 ms | 3.5 |
+    | quarter (16, 4 moving) | 39.8 | 597 | 5 / 10 / 60 ms | 14.0 |
+
+  - 11/21/2026, AL, **hosted dev** (`portal-runtime-dev` and the dev Supabase project), 60 s per scenario, 10 Hz, windows 17:59:13 to 18:02:17 UTC. No warnings; 100% delivery; no corrections, request errors, reconnects, closes, or other players. Dashboard CPU time and duration: *not yet recorded*.
+
+    | Scenario | Incoming/s | Outgoing/s | Delay p50 / p95 / max | Hours/day | Generator event-loop p99 / max |
+    | --- | --- | --- | --- | --- | --- |
+    | baseline (2, 2 moving) | 19.9 | 19.9 | 29 / 34 / 53 ms | 27.9 | 11.5 / 18.0 ms |
+    | full (16, 16 moving) | 158.9 | 2,384 | 33 / 44 / 206 ms | 3.5 | 11.6 / 98.6 ms |
+    | quarter (16, 4 moving) | 39.7 | 596 | 28 / 36 / 157 ms | 14.0 | 11.7 / 122.0 ms |
+
+    **Commentary (hosted run).** The results matched expectations.
+    - **Message rates match the research.** Research §6.2 estimated 160 incoming messages/s and about 3.5 hours/day for all 16 moving at 10 Hz, and 40/s and about 13.9 hours/day for 25% moving. The measured 158.9/s (3.5 h) and 39.7/s (14.0 h) confirm those estimates. Outgoing traffic is exactly the expected fan-out: each move reaches the other 15 players (158.9 × 15 ≈ 2,384/s), and outgoing messages are not billed.
+    - **The single World Durable Object kept up with a full world.** All 143,040 moves in the 16-player scenario reached every other player. The server rejected none, and no connection dropped or reconnected.
+    - **Delay is mostly network, not server load.** Hosted p50 is about 29 ms with only 2 players (local: 2 ms), so that is the round trip through Cloudflare. Going from 2 to 16 moving players added about 4 ms at p50 and 10 ms at p95. For comparison, a 10 Hz move interval is 100 ms.
+    - **The max delays (206 and 157 ms) are probably the load generator, not the server.** Those same scenarios show generator event-loop maximums of 98.6 and 122 ms, while the p99 stayed near the 10 ms sampling interval. That pattern fits brief pauses on this machine, for example garbage collection while it tracks 143,000 deliveries, rather than the server. Not confirmed.
+    - **The free-tier hours are the worst case.** 3.5 hours/day assumes all 16 players moving all the time. Real play is likely nearer the quarter scenario (about 14 hours/day). The daily allowance is per Cloudflare account, so dev and production would share it unless they use separate accounts (research §6.2).
+    - **Still open:** the Durable Object's CPU time and duration from the dashboard. Also, whether to call 16 players "supported" for FR-03 and AC-02 is a team decision. These runs measured a moving lobby only, not games in progress.
 
 ## Production runtime (at first launch)
 
