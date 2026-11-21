@@ -23,8 +23,8 @@
     "dev": {
       "name": "portal-runtime-dev",
       "vars": {
-        "SUPABASE_URL": "https://REPLACE-dev.supabase.co",
-        "ALLOWED_ORIGINS": "https://REPLACE-dev-frontend.example"
+        "SUPABASE_URL": "https://cszopjtqhjkvgioebmha.supabase.co",
+        "ALLOWED_ORIGINS": "https://portal-playhouse-frontend.vercel.app/"
       },
       "secrets": {
         "required": ["SUPABASE_SECRET_KEY"]
