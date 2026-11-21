@@ -24,7 +24,7 @@
       "name": "portal-runtime-dev",
       "vars": {
         "SUPABASE_URL": "https://cszopjtqhjkvgioebmha.supabase.co",
-        "ALLOWED_ORIGINS": "https://portal-playhouse-frontend.vercel.app/"
+        "ALLOWED_ORIGINS": "https://portal-playhouse-frontend.vercel.app,http://127.0.0.1:4173,http://localhost:4173"
       },
       "secrets": {
         "required": ["SUPABASE_SECRET_KEY"]
