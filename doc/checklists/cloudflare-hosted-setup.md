@@ -1,11 +1,12 @@
 # Cloudflare Hosted Setup Checklist
 
-**Version:** 0.1
+**Version:** 0.2
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | 11/21/2026 | Claude: Marked step 4 done: the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, which is now recorded in the Supabase checklist. Adam: ticked the completed tasks. |
 | 0.1 | 11/18/2026 | Created the manual checklist for the hosted dev runtime (`portal-runtime-dev`): wrangler login, `env.dev` vars, the Worker secret, the hosted dev migration, the first deploy, a scripted smoke check, and handing the runtime URL to Ryan. Production stays deferred until launch. The load check is deferred. |
 
 These are manual steps for Adam. Agents never run `wrangler login`, `wrangler secret put`, or `wrangler deploy`, and never run Supabase commands with `--remote`. The design is in [section 5.1 of the runtime spec](../specs/2026-11-17-runtime-transport-design.md) (environments) and [section 10](../specs/2026-11-17-runtime-transport-design.md) (smoke check and hosted setup). Hosted Supabase steps are in the [hosted Supabase setup checklist](supabase-hosted-setup.md).
@@ -29,21 +30,21 @@ Use placeholders only in Git, pull requests, chat, and agent logs.
 
 ## Dev runtime (this milestone)
 
-- [ ] 1. Log in: `npx wrangler login`. This opens the browser and stores an OAuth token for your user. Check with `npx wrangler whoami` that the account is the project's account.
-- [ ] 2. Fill in the `env.dev` vars in `runtime/wrangler.jsonc` and commit the change on the branch:
+- [x] 1. Log in: `npx wrangler login`. This opens the browser and stores an OAuth token for your user. Check with `npx wrangler whoami` that the account is the project's account.
+- [x] 2. Fill in the `env.dev` vars in `runtime/wrangler.jsonc` and commit the change on the branch:
   - `SUPABASE_URL`: the hosted dev project URL, `https://<project-ref>.supabase.co`.
   - `ALLOWED_ORIGINS`: the Vercel dev frontend URL (for example `https://<dev-frontend>.vercel.app`), plus `http://127.0.0.1:4173` so Ryan can test the local frontend against the dev runtime. Any origin not listed gets HTTP 403 from `/connect`.
   - Leave the placeholders in `env.production` as they are.
   - Check the file with `npx wrangler --cwd runtime deploy --env dev --dry-run`. It builds and packages without deploying.
-- [ ] 3. Set the secret: `npx wrangler --cwd runtime secret put SUPABASE_SECRET_KEY --env dev`, and paste the hosted dev **secret** key at the prompt (not as an argument, so it stays out of shell history).
+- [x] 3. Set the secret: `npx wrangler --cwd runtime secret put SUPABASE_SECRET_KEY --env dev`, and paste the hosted dev **secret** key at the prompt (not as an argument, so it stays out of shell history).
   - The first `secret put` creates the `portal-runtime-dev` Worker if it does not exist yet. Each later `secret put` deploys a new version at once.
   - The Worker refuses to start the World object without this secret.
-- [ ] 4. Apply the new migration (Portal Partners results, the runtime functions, and `winsTotal`) to the hosted dev project. Follow step 5 of the [hosted Supabase setup checklist](supabase-hosted-setup.md) (`migration list`, dry run, push, `migration list` again).
+- [x] 4. Apply the new migration (Portal Partners results, the runtime functions, and `winsTotal`) to the hosted dev project. Follow step 5 of the [hosted Supabase setup checklist](supabase-hosted-setup.md) (`migration list`, dry run, push, `migration list` again).
   - Then run the hosted advisors (step 6 of the same checklist). The new runtime functions are granted only to `service_role`, so they should add **no** new `anon` or `authenticated` findings. `get_my_results` is called by signed-in players, so expect one more accepted `authenticated_security_definer_function_executable` (0029) finding for `public.get_my_results`. Record it in that checklist. Anything else is a problem to fix before merging.
-- [ ] 5. Deploy: `npx wrangler --cwd runtime deploy --env dev`.
+- [x] 5. Deploy: `npx wrangler --cwd runtime deploy --env dev`.
   - The output ends with the Worker URL, `https://portal-runtime-dev.<subdomain>.workers.dev`. The runtime URL is that host with `wss://` and the `/connect` path.
   - Quick check: `curl -i https://portal-runtime-dev.<subdomain>.workers.dev/connect -H 'Origin: https://evil.example'` returns `403`. With an allowed origin and no upgrade header, it returns `426`.
-- [ ] 6. Smoke check (spec §10): two scripted clients sign in, see each other, play one round to a win, and confirm the saved result. Run it after steps 3 to 5.
+- [x] 6. Smoke check (spec §10): two scripted clients sign in, see each other, play one round to a win, and confirm the saved result. Run it after steps 3 to 5.
   - **Use the real client.** The tests and `scripts/` refuse non-local URLs, so this is the only hosted check. Ryan's frontend is not wired to the runtime yet, so two browsers are not possible until it is.
   - **Where to run:** at the repository root, with `.env.development.local` from the Supabase checklist (it holds `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for hosted dev). Docker is not needed.
   - Replace `you@your-domain` with an address you own (the script creates two plus-address users, as in the Supabase smoke check), `<subdomain>` with your workers.dev subdomain, and the origin with one listed in `ALLOWED_ORIGINS`. Paste the whole block. Nothing is written to disk. A full run takes about 30 seconds.
@@ -133,7 +134,8 @@ EOF
     - A timeout waiting for `result.saved`: the save is still retrying. Check the logs for `result.save_failed`.
   - **Clean up:** delete the two test users under **Authentication → Users**. Their results stay as rows with those players removed from the participants (`on delete cascade`); that is fine for a dev project.
   - Record the result here and in the pull request: date, initials, PASS or FAIL.
-- [ ] 7. Give Ryan the dev runtime URL (`wss://portal-runtime-dev.<subdomain>.workers.dev/connect`), to pass as `runtimeUrl` to `createPortalClient` alongside the dev Supabase URL and publishable key. **Never** the secret key.
+    - 11/21/2026, AL, PASS
+- [x] 7. Give Ryan the dev runtime URL (`wss://portal-runtime-dev.<subdomain>.workers.dev/connect`), to pass as `runtimeUrl` to `createPortalClient` alongside the dev Supabase URL and publishable key. **Never** the secret key.
 
 ## Deferred
 
