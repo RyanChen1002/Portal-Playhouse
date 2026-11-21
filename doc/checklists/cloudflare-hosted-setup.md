@@ -1,12 +1,12 @@
 # Cloudflare Hosted Setup Checklist
 
-**Version:** 0.2
+**Version:** 0.3
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.2 | 11/21/2026 | Claude: Marked step 4 done: the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, which is now recorded in the Supabase checklist. Adam: ticked the completed tasks. |
+| 0.3 | 11/21/2026 | Replaced the deferred load-check note with the Load check section: local and hosted-dev runs of `scripts/load-check.ts`, reading the dashboard, and recording results; recorded a 5-second local quick check. Earlier the same day (0.2): Claude marked step 4 done (the hosted dev advisors showed only the five accepted findings, including the new `get_my_results` one, now recorded in the Supabase checklist); Adam ticked the completed tasks. |
 | 0.1 | 11/18/2026 | Created the manual checklist for the hosted dev runtime (`portal-runtime-dev`): wrangler login, `env.dev` vars, the Worker secret, the hosted dev migration, the first deploy, a scripted smoke check, and handing the runtime URL to Ryan. Production stays deferred until launch. The load check is deferred. |
 
 These are manual steps for Adam. Agents never run `wrangler login`, `wrangler secret put`, or `wrangler deploy`, and never run Supabase commands with `--remote`. The design is in [section 5.1 of the runtime spec](../specs/2026-11-17-runtime-transport-design.md) (environments) and [section 10](../specs/2026-11-17-runtime-transport-design.md) (smoke check and hosted setup). Hosted Supabase steps are in the [hosted Supabase setup checklist](supabase-hosted-setup.md).
@@ -137,9 +137,30 @@ EOF
     - 11/21/2026, AL, PASS
 - [x] 7. Give Ryan the dev runtime URL (`wss://portal-runtime-dev.<subdomain>.workers.dev/connect`), to pass as `runtimeUrl` to `createPortalClient` alongside the dev Supabase URL and publishable key. **Never** the secret key.
 
-## Deferred
+## Load check
 
-- **Load check** (spec §10): 16 simulated clients, first against the local runtime, then against hosted dev, measuring incoming messages per second at 10 Hz and the object's CPU and duration. It is deferred to integration testing with Ryan's frontend. Do not claim capacity results until it has been run, and record usage here when it is.
+Spec §10's load row; design in the [load-check design](../specs/2026-11-21-load-check-design.md). `scripts/load-check.ts` connects real clients, walks them around the lobby, and prints one block per scenario: incoming and outgoing messages per second, the free-tier hours per day at that load (research §6.2), move delivery delay (p50, p95, max), delivery percentage, problems (rejected moves, request errors, reconnects), the load generator's own event-loop delay, and the run's UTC window. It is a measurement, not a pass/fail test. Any `WARNING:` line means those numbers should not be trusted as they stand. Do not claim capacity results until a hosted run is recorded here.
+
+Scenarios (all players in the lobby): `baseline` 2 players, both moving; `full` 16 players, all moving; `quarter` 16 players, 4 moving. Options: `--scenario <name>` (repeatable; default all three), `--duration <seconds>` (default 60 per scenario), `--rate <hz>` (1 to 20, default 10).
+
+- [ ] 1. **Local run.** With the local stack running (`npm run db:start`): `npx tsx scripts/load-check.ts`. It starts its own local runtime and creates its own local test accounts; it takes about 4 minutes. Add `--duration 5` for a quick check that it works.
+- [ ] 2. **Hosted dev run** (Adam, manually; agents never run it). At the repository root with `.env.development.local` (it holds `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for hosted dev):
+
+```sh
+RUNTIME_URL=wss://portal-runtime-dev.<subdomain>.workers.dev/connect \
+RUNTIME_ORIGIN=http://127.0.0.1:4173 \
+LOAD_EMAIL=you@your-domain \
+LOAD_PASSWORD='<choose a password; keep it out of Git>' \
+npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted
+```
+
+  - The first line shows the Supabase and runtime hosts. Press Ctrl-C at once if either is not dev; the script signs its users out and exits. It refuses any URL containing `production`, but a Supabase project URL does not show its environment, so check the host yourself.
+  - On the first run it signs up `you+load01@your-domain` to `you+load16@your-domain` (display names `Load01` to `Load16`) and prints each one created. Later runs sign in as the same users with the same `LOAD_PASSWORD`. Keep these users: deleting them just means the next run creates them again.
+  - The default run (three scenarios, 60 s each) sends about 13,200 messages, about 700 of the 100,000 daily free requests. Don't loop it.
+  - **Dashboard:** for each scenario's printed UTC window, open **Workers & Pages → portal-runtime-dev → Metrics** (Durable Objects) and note CPU time and wall-clock duration.
+  - **If it fails:** `WORLD_FULL` means others (for example Ryan testing) are using slots; rerun later or with `--scenario baseline`. `could not sign in or sign up (EMAIL_TAKEN)` on a later run means `LOAD_PASSWORD` differs from the first run's. `DISPLAY_NAME_TAKEN` means another account already uses a `LoadNN` name.
+- [ ] 3. **Record results** here and in the pull request: date, initials, mode (local or hosted), rate, and for each scenario: incoming/s, outgoing/s, delay p95, hours/day, warnings (if any), and for hosted runs the dashboard CPU and duration.
+  - 11/21/2026, Claude (agent, local, 5 s per scenario, 10 Hz, quick check only): baseline 19.6/s in, 19.6/s out, p95 2 ms, 28.3 h/day; full 156.8/s in, 2,352/s out, p95 26 ms, 3.5 h/day; quarter 39.2/s in, 588/s out, p95 9 ms, 14.2 h/day. No warnings.
 
 ## Production runtime (at first launch)
 

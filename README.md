@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.5 | 11/21/2026 | Added the load-check command (`scripts/load-check.ts`) and noted its manual hosted mode. |
 | 0.4 | 11/18/2026 | Added local runtime commands (`npm run test:runtime`, `npm run runtime:dev` with `runtime/.dev.vars`) and the link to the Cloudflare hosted setup checklist; integration tests now start the local runtime themselves. |
 | 0.3 | 11/17/2026 | Local setup now starts the stack with `npm run db:start`, which first generates the Git-ignored local signing keys. |
 | 0.2 | 11/15/2026 | Added frontend preview instructions and folder overview; clarified sample UI status and separate backend setup; consolidated history into one table. |
@@ -47,7 +48,9 @@ The integration tests start the local runtime (the Worker and its World Durable 
 
 To run the runtime by hand for local frontend work, copy `runtime/.dev.vars.example` to `runtime/.dev.vars`, fill in the local secret key from `npx supabase status`, and run `npm run runtime:dev`. The client's `runtimeUrl` is then `ws://127.0.0.1:8787/connect`, and connections are accepted only from `http://127.0.0.1:4173` and `http://localhost:4173`.
 
-Stop the stack with `npx supabase stop`. All tests and scripts target the local stack only. The manual steps for the hosted projects are in the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md) and the [Cloudflare hosted setup checklist](doc/checklists/cloudflare-hosted-setup.md) (the dev runtime).
+To measure load (message rates, move delay, and the free-tier projection for 2 and 16 players), run `npx tsx scripts/load-check.ts` with the local stack running. It takes about 4 minutes; add `--duration 5` for a quick run. See the [load check](doc/checklists/cloudflare-hosted-setup.md#load-check) for options, hosted dev, and recording results.
+
+Stop the stack with `npx supabase stop`. All tests and scripts target the local stack only, except the load check's manual `--hosted` mode. The manual steps for the hosted projects are in the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md) and the [Cloudflare hosted setup checklist](doc/checklists/cloudflare-hosted-setup.md) (the dev runtime).
 
 ## Try the frontend preview
 
