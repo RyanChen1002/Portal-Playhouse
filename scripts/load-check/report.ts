@@ -27,6 +27,8 @@ export interface ScenarioReport {
   corrections: number;
   requestErrors: number;
   reconnects: number;
+  /** Players in the lobby who were not part of the scenario (most seen at its start or end). */
+  extraPlayers: number;
   eventLoopMs: { p99: number; max: number };
   freeTierHoursPerDay: number | null;
   warnings: string[];
@@ -53,6 +55,9 @@ export function warningsFor(r: Omit<ScenarioReport, 'warnings'>): string[] {
   }
   if (r.requestErrors > 0) w.push(`${r.requestErrors} request error(s) were received.`);
   if (r.reconnects > 0) w.push(`${r.reconnects} reconnect(s) happened during the run.`);
+  if (r.extraPlayers > 0) {
+    w.push(`${r.extraPlayers} other players were in the lobby; outgoing rates include their messages and incoming rates miss theirs.`);
+  }
   if (r.deliveryRatio !== null && r.deliveryRatio < DELIVERY_WARN_RATIO) {
     w.push(`Move delivery was ${(r.deliveryRatio * 100).toFixed(1)}% of expected; some moves never reached other players.`);
   }
@@ -72,7 +77,7 @@ export function formatReport(r: ScenarioReport): string {
     `free tier   ${fmt(r.freeTierHoursPerDay)} hours/day of this load before the daily request limit`,
     `move delay  p50 ${fmt(r.delayMs.p50)} ms, p95 ${fmt(r.delayMs.p95)} ms, max ${fmt(r.delayMs.max)} ms (${r.delayMs.count} deliveries)`,
     `delivery    ${r.deliveryRatio === null ? 'n/a' : `${(r.deliveryRatio * 100).toFixed(1)}%`} of ${r.expectedDeliveries} expected`,
-    `problems    corrections ${r.corrections}, request errors ${r.requestErrors}, reconnects ${r.reconnects}`,
+    `problems    corrections ${r.corrections}, request errors ${r.requestErrors}, reconnects ${r.reconnects}, other players ${r.extraPlayers}`,
     `generator   event-loop p99 ${fmt(r.eventLoopMs.p99)} ms, max ${fmt(r.eventLoopMs.max)} ms`,
   ];
   if (r.warnings.length === 0) lines.push('No problems seen.');

@@ -4,8 +4,10 @@
 //   Local:      npm run db:start && npx tsx scripts/load-check.ts [--duration 60] [--rate 10] [--scenario full]
 //   Hosted dev: npx tsx --env-file=.env.development.local scripts/load-check.ts --hosted   (Adam only; see
 //               doc/checklists/cloudflare-hosted-setup.md, "Load check")
+import { readFileSync } from 'node:fs';
 import type { LocalRuntime } from '../shared/test/runtime-env';
-import { USAGE, parseArgs, type HostedSettings, type LoadOptions } from './load-check/args';
+import { USAGE, devTargets, parseArgs, type DevTargets, type HostedSettings, type LoadOptions } from './load-check/args';
+import { signInLoadUsers } from './load-check/accounts';
 import { formatReport } from './load-check/report';
 import { SCENARIOS, createLoadClient, runScenario, type LoadClient, type Probe } from './load-check/run';
 
@@ -50,8 +52,7 @@ async function hostedClients(n: number, h: HostedSettings): Promise<void> {
   console.log(`Supabase: ${new URL(h.supabaseUrl).host}   runtime: ${new URL(h.runtimeUrl).host}   (hosted)`);
   const at = h.email.lastIndexOf('@');
   const [user, domain] = [h.email.slice(0, at), h.email.slice(at + 1)];
-  // Into the shared list as they are created, so cleanup signs out even a partial set.
-  const out = clients;
+  const users = [];
   for (let i = 1; i <= n; i++) {
     const nn = String(i).padStart(2, '0');
     const lc = createLoadClient({
@@ -62,15 +63,11 @@ async function hostedClients(n: number, h: HostedSettings): Promise<void> {
       origin: h.origin,
       probe,
     });
-    out.push(lc);
-    const email = `${user}+load${nn}@${domain}`;
-    let r = await lc.client.signIn({ email, password: h.password });
-    if (r.error?.code === 'INVALID_CREDENTIALS') {
-      r = await lc.client.signUp({ email, password: h.password, displayName: `Load${nn}` });
-      if (!r.error) console.log(`Created test user ${email}`);
-    }
-    if (r.error) throw new Error(`${lc.tag} could not sign in or sign up (${r.error.code}).`);
+    // Into the shared list before signing in, so cleanup signs out even a partial set.
+    clients.push(lc);
+    users.push({ tag: lc.tag, client: lc.client, email: `${user}+load${nn}@${domain}`, displayName: `Load${nn}` });
   }
+  await signInLoadUsers(users, h.password, (email) => console.log(`Created test user ${email}`));
 }
 
 async function run(o: LoadOptions): Promise<number> {
@@ -87,7 +84,13 @@ async function run(o: LoadOptions): Promise<number> {
 }
 
 async function main(): Promise<void> {
-  const parsed = parseArgs(process.argv.slice(2), process.env);
+  let dev: DevTargets | null = null;
+  try {
+    dev = devTargets(readFileSync(new URL('../runtime/wrangler.jsonc', import.meta.url), 'utf8'));
+  } catch {
+    // Hosted mode then refuses to run; local mode does not need it.
+  }
+  const parsed = parseArgs(process.argv.slice(2), process.env, dev);
   if (!parsed.ok) {
     console.error(`${parsed.message}\n${USAGE}`);
     process.exitCode = 1;

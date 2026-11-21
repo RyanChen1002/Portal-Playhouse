@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from './args';
+import { devTargets, parseArgs, type DevTargets } from './args';
+
+const dev: DevTargets = { supabaseHost: 'abcdefgh.supabase.co', runtimeName: 'portal-runtime-dev' };
 
 const hostedEnv = {
   SUPABASE_URL: 'https://abcdefgh.supabase.co',
@@ -11,7 +14,7 @@ const hostedEnv = {
 };
 
 function message(argv: string[], env: Record<string, string | undefined> = {}): string {
-  const r = parseArgs(argv, env);
+  const r = parseArgs(argv, env, dev);
   if (r.ok) throw new Error('expected a usage error');
   return r.message;
 }
@@ -50,7 +53,7 @@ describe('parseArgs', () => {
   });
 
   it('reads the hosted settings from the environment', () => {
-    const r = parseArgs(['--hosted'], hostedEnv);
+    const r = parseArgs(['--hosted'], hostedEnv, dev);
     expect(r.ok && r.options.hosted).toEqual({
       supabaseUrl: hostedEnv.SUPABASE_URL,
       publishableKey: hostedEnv.SUPABASE_PUBLISHABLE_KEY,
@@ -68,12 +71,33 @@ describe('parseArgs', () => {
     expect(msg).not.toContain(hostedEnv.SUPABASE_PUBLISHABLE_KEY);
   });
 
-  it.each(['SUPABASE_URL', 'RUNTIME_URL'] as const)('refuses a production host in %s', (name) => {
-    const env = { ...hostedEnv, [name]: name === 'RUNTIME_URL' ? 'wss://portal-runtime-production.example.workers.dev/connect' : 'https://my-production.supabase.co' };
-    expect(message(['--hosted'], env)).toContain('production');
+  it.each([
+    ['SUPABASE_URL', 'https://zyxwvuts.supabase.co'],
+    ['RUNTIME_URL', 'wss://portal-runtime-production.example.workers.dev/connect'],
+    ['RUNTIME_URL', 'wss://play.example.com/connect'],
+  ] as const)('refuses a %s that is not hosted dev (%s)', (name, url) => {
+    expect(message(['--hosted'], { ...hostedEnv, [name]: url })).toContain(`${name} is not hosted dev`);
+  });
+
+  it('refuses --hosted when the dev hosts are unknown', () => {
+    expect(parseArgs(['--hosted'], hostedEnv, null).ok).toBe(false);
   });
 
   it('rejects a LOAD_EMAIL without @', () => {
-    expect(parseArgs(['--hosted'], { ...hostedEnv, LOAD_EMAIL: 'nobody' }).ok).toBe(false);
+    expect(parseArgs(['--hosted'], { ...hostedEnv, LOAD_EMAIL: 'nobody' }, dev).ok).toBe(false);
+  });
+});
+
+describe('devTargets', () => {
+  it("reads the dev Supabase host and Worker name from the repository's wrangler.jsonc", () => {
+    const text = readFileSync(new URL('../../runtime/wrangler.jsonc', import.meta.url), 'utf8');
+    const t = devTargets(text);
+    expect(t.runtimeName).toBe('portal-runtime-dev');
+    expect(t.supabaseHost).toMatch(/^[a-z0-9]+\.supabase\.co$/);
+  });
+
+  it('refuses a placeholder or missing dev environment', () => {
+    expect(() => devTargets('{ "env": { "dev": { "name": "portal-runtime-dev", "vars": { "SUPABASE_URL": "https://REPLACE-dev.supabase.co" } } } }')).toThrow();
+    expect(() => devTargets('{ "env": {} }')).toThrow();
   });
 });

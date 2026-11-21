@@ -19,6 +19,7 @@ const clean: Omit<ScenarioReport, 'warnings'> = {
   corrections: 0,
   requestErrors: 0,
   reconnects: 0,
+  extraPlayers: 0,
   eventLoopMs: { p99: 5, max: 12 },
   freeTierHoursPerDay: 3.47,
 };
@@ -59,6 +60,10 @@ describe('warningsFor', () => {
 
   it('warns about reconnects', () => {
     expect(warningsFor({ ...clean, reconnects: 1 }).join('\n')).toContain('reconnect');
+  });
+
+  it('warns when other players were in the lobby', () => {
+    expect(warningsFor({ ...clean, extraPlayers: 2 }).join('\n')).toContain('2 other players');
   });
 
   it('warns when moves go missing', () => {

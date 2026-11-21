@@ -68,6 +68,23 @@ describe('runScenario', () => {
   );
 
   it(
+    'warns when other players are in the lobby',
+    async () => {
+      const bystander = await signedIn[2]!.client.connectWorld();
+      expect(bystander.error).toBeNull();
+      try {
+        const r = await runScenario(signedIn.slice(0, 2), { name: 'crowded', movers: 2, rateHz: 10, durationMs: 1_000 }, probe);
+        expect(r.players).toBe(2);
+        expect(r.extraPlayers).toBe(1);
+        expect(r.warnings.join('\n')).toContain('1 other players');
+      } finally {
+        await bystander.data?.leaveWorld();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     'a client that cannot connect stops the scenario',
     async () => {
       const notSignedIn = newClient('nosign');

@@ -64,6 +64,11 @@ async function connectAll(clients: LoadClient[]): Promise<WorldConnection[]> {
   return conns;
 }
 
+/** Players in the lobby beyond the scenario's own, as any scenario client sees it. */
+function othersInLobby(conns: WorldConnection[]): number {
+  return Math.max(0, ...conns.map((c) => c.snapshot().room.players.length - conns.length));
+}
+
 async function waitForPresence(conns: WorldConnection[]): Promise<void> {
   const end = Date.now() + PRESENCE_TIMEOUT_MS;
   while (!conns.every((c) => c.snapshot().room.players.length >= conns.length)) {
@@ -85,6 +90,7 @@ export async function runScenario(
     conns = await connectAll(clients);
     conns.forEach((c, i) => meter.registerPlayer(clients[i]!.tag, c.playerId));
     await waitForPresence(conns);
+    let extraPlayers = othersInLobby(conns);
 
     let reconnects = 0;
     for (const c of conns) c.onConnectionState((st) => st === 'reconnecting' && reconnects++);
@@ -106,6 +112,7 @@ export async function runScenario(
     await sleep(SETTLE_MS);
     meter.stop();
     loop.disable();
+    extraPlayers = Math.max(extraPlayers, othersInLobby(conns));
 
     const k = meter.counts();
     const seconds = s.durationMs / 1000;
@@ -135,6 +142,7 @@ export async function runScenario(
       corrections: k.corrections,
       requestErrors: k.requestErrors,
       reconnects,
+      extraPlayers,
       eventLoopMs: { p99: loop.percentile(99) / 1e6, max: loop.max / 1e6 },
       freeTierHoursPerDay: freeTierHoursPerDay(incomingPerSec),
     };

@@ -10,6 +10,31 @@ export interface HostedSettings {
   password: string;
 }
 
+/** Where hosted dev lives, read from the committed `runtime/wrangler.jsonc` (`env.dev`). */
+export interface DevTargets {
+  /** Host of `env.dev.vars.SUPABASE_URL`, e.g. `<ref>.supabase.co`. */
+  supabaseHost: string;
+  /** `env.dev.name`; the runtime host must start with `<name>.`. */
+  runtimeName: string;
+}
+
+/**
+ * Reads the dev targets from wrangler.jsonc text. The `dev` block comes before `production`,
+ * so the first `name` and `SUPABASE_URL` after `"dev": {` are dev's. Throws when absent or a
+ * placeholder, so hosted mode cannot run without a known dev environment.
+ */
+export function devTargets(wranglerText: string): DevTargets {
+  const start = wranglerText.search(/"dev"\s*:\s*\{/);
+  if (start < 0) throw new Error('runtime/wrangler.jsonc has no env.dev block.');
+  const block = wranglerText.slice(start);
+  const name = /"name"\s*:\s*"([^"]+)"/.exec(block)?.[1];
+  const url = /"SUPABASE_URL"\s*:\s*"([^"]+)"/.exec(block)?.[1];
+  if (!name || !url || /REPLACE/i.test(url)) {
+    throw new Error('runtime/wrangler.jsonc env.dev is missing its name or SUPABASE_URL.');
+  }
+  return { supabaseHost: new URL(url).host, runtimeName: name };
+}
+
 export interface LoadOptions {
   scenarios: ScenarioName[];
   durationMs: number;
@@ -36,6 +61,7 @@ const isPositiveInt = (s: string | undefined): boolean => !!s && /^\d+$/.test(s)
 export function parseArgs(
   argv: string[],
   env: Record<string, string | undefined>,
+  dev: DevTargets | null = null,
 ): { ok: true; options: LoadOptions } | { ok: false; message: string } {
   const fail = (message: string) => ({ ok: false as const, message });
   const scenarios: ScenarioName[] = [];
@@ -73,13 +99,23 @@ export function parseArgs(
   const options: LoadOptions = { scenarios: scenarios.length ? scenarios : [...NAMES], durationMs, rateHz, hosted: null };
   if (!hosted) return { ok: true, options };
 
+  if (!dev) return fail('--hosted needs the hosted dev targets from runtime/wrangler.jsonc (env.dev).');
   const missing = HOSTED_VARS.filter((name) => !env[name]);
   if (missing.length) return fail(`--hosted needs these environment variables: ${missing.join(', ')}.`);
   const v = (name: (typeof HOSTED_VARS)[number]) => env[name]!;
-  for (const name of ['SUPABASE_URL', 'RUNTIME_URL'] as const) {
-    if (v(name).toLowerCase().includes('production')) {
-      return fail(`Refusing to run: ${name} points at production. The load check is for local and hosted dev only.`);
+  // Allow-list, not deny-list: a Supabase project URL never says which environment it is.
+  const host = (url: string): string | null => {
+    try {
+      return new URL(url).host;
+    } catch {
+      return null;
     }
+  };
+  if (host(v('SUPABASE_URL')) !== dev.supabaseHost) {
+    return fail(`Refusing to run: SUPABASE_URL is not hosted dev (env.dev in runtime/wrangler.jsonc).`);
+  }
+  if (!host(v('RUNTIME_URL'))?.startsWith(`${dev.runtimeName}.`)) {
+    return fail(`Refusing to run: RUNTIME_URL is not hosted dev (its host must start with ${dev.runtimeName}.).`);
   }
   const email = v('LOAD_EMAIL');
   const at = email.indexOf('@');
