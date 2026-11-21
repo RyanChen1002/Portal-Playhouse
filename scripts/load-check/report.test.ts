@@ -20,6 +20,7 @@ const clean: Omit<ScenarioReport, 'warnings'> = {
   requestErrors: 0,
   reconnects: 0,
   extraPlayers: 0,
+  closes: [],
   eventLoopMs: { p99: 5, max: 12 },
   freeTierHoursPerDay: 3.47,
 };
@@ -66,6 +67,18 @@ describe('warningsFor', () => {
     expect(warningsFor({ ...clean, extraPlayers: 2 }).join('\n')).toContain('2 other players');
   });
 
+  it('warns about connections that closed during the run, with their reasons', () => {
+    const text = warningsFor({ ...clean, closes: ['idle', 'left'] }).join('\n');
+    expect(text).toContain('2 connection(s) closed during the run');
+    expect(text).toContain('idle, left');
+  });
+
+  it('blames closed connections, not the server, for missing moves when there were closes', () => {
+    const delivery = warningsFor({ ...clean, closes: ['lost'], deliveryRatio: 0.93 }).find((w) => w.includes('delivery'));
+    expect(delivery).toContain('connection(s) closed');
+    expect(delivery).not.toContain('never reached other players');
+  });
+
   it('warns when moves go missing', () => {
     expect(warningsFor({ ...clean, deliveryRatio: 0.95 }).join('\n')).toContain('delivery');
     expect(warningsFor({ ...clean, deliveryRatio: 0.99 })).toEqual([]);
@@ -80,7 +93,7 @@ describe('warningsFor', () => {
 describe('formatReport', () => {
   it('shows the numbers and says when there were no problems', () => {
     const text = formatReport({ ...clean, warnings: [] });
-    for (const part of ['full', 'incoming 160.0/s', 'outgoing', 'p95', 'hours/day', clean.startedAt, clean.endedAt, 'No problems seen.']) {
+    for (const part of ['includes the 10 ms sampling interval', 'full', 'incoming 160.0/s', 'outgoing', 'p95', 'hours/day', clean.startedAt, clean.endedAt, 'No problems seen.']) {
       expect(text).toContain(part);
     }
   });

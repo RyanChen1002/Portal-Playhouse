@@ -4,7 +4,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { createMemoryStorage, createPortalClient, type SocketLike } from '../../shared/client/index';
 import type { PortalClient, WorldConnection } from '../../shared/contracts/index';
 import { Meter, instrumentSocket } from './meter';
-import { freeTierHoursPerDay, percentile, warningsFor, type ScenarioReport } from './report';
+import { EVENT_LOOP_RESOLUTION_MS, freeTierHoursPerDay, percentile, warningsFor, type ScenarioReport } from './report';
 import { WALK_SPEED, createWalker } from './walker';
 
 export type ScenarioName = 'baseline' | 'full' | 'quarter';
@@ -93,11 +93,20 @@ export async function runScenario(
     let extraPlayers = othersInLobby(conns);
 
     let reconnects = 0;
-    for (const c of conns) c.onConnectionState((st) => st === 'reconnecting' && reconnects++);
+    let walking = false;
+    const closes: string[] = [];
+    for (const c of conns) {
+      c.onConnectionState((st) => {
+        if (st === 'reconnecting') reconnects++;
+        // A final close; closeReason is set before 'closed' is emitted. Our own leaveWorld comes after.
+        if (st === 'closed' && walking) closes.push(c.closeReason ?? 'unknown');
+      });
+    }
 
-    const loop = monitorEventLoopDelay({ resolution: 10 });
+    const loop = monitorEventLoopDelay({ resolution: EVENT_LOOP_RESOLUTION_MS });
     loop.enable();
     meter.start();
+    walking = true;
     for (const c of conns.slice(0, s.movers)) {
       const walker = createWalker(c.snapshot().self.position!, WALK_SPEED / s.rateHz);
       timers.push(
@@ -111,6 +120,7 @@ export async function runScenario(
     timers.splice(0).forEach(clearInterval);
     await sleep(SETTLE_MS);
     meter.stop();
+    walking = false;
     loop.disable();
     extraPlayers = Math.max(extraPlayers, othersInLobby(conns));
 
@@ -143,6 +153,7 @@ export async function runScenario(
       requestErrors: k.requestErrors,
       reconnects,
       extraPlayers,
+      closes,
       eventLoopMs: { p99: loop.percentile(99) / 1e6, max: loop.max / 1e6 },
       freeTierHoursPerDay: freeTierHoursPerDay(incomingPerSec),
     };

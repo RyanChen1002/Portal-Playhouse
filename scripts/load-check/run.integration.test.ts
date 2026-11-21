@@ -85,6 +85,18 @@ describe('runScenario', () => {
   );
 
   it(
+    'reports a connection that closes during the run, and why',
+    async () => {
+      // Signing out leaves the world: a final close with reason 'left'. Runs last for p3.
+      setTimeout(() => void signedIn[2]!.client.signOut(), 500);
+      const r = await runScenario(signedIn, { name: 'closing', movers: 3, rateHz: 10, durationMs: 1_500 }, probe);
+      expect(r.closes).toEqual(['left']);
+      expect(r.warnings.join('\n')).toContain('1 connection(s) closed during the run (left)');
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
     'a client that cannot connect stops the scenario',
     async () => {
       const notSignedIn = newClient('nosign');

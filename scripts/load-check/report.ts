@@ -6,6 +6,8 @@ export const FREE_REQUESTS_PER_DAY = 100_000;
 export const MESSAGES_PER_REQUEST = 20;
 /** Event-loop p99 above this (ms) means the load generator itself was slow. */
 export const EVENT_LOOP_WARN_MS = 50;
+/** monitorEventLoopDelay sampling interval (ms); its figures include it, so ~10 ms means no lag. */
+export const EVENT_LOOP_RESOLUTION_MS = 10;
 /** Delivery ratio below this means moves went missing. */
 export const DELIVERY_WARN_RATIO = 0.99;
 
@@ -29,6 +31,8 @@ export interface ScenarioReport {
   reconnects: number;
   /** Players in the lobby who were not part of the scenario (most seen at its start or end). */
   extraPlayers: number;
+  /** Why each connection that closed for good during the run closed (WorldConnection.closeReason). */
+  closes: string[];
   eventLoopMs: { p99: number; max: number };
   freeTierHoursPerDay: number | null;
   warnings: string[];
@@ -58,8 +62,16 @@ export function warningsFor(r: Omit<ScenarioReport, 'warnings'>): string[] {
   if (r.extraPlayers > 0) {
     w.push(`${r.extraPlayers} other players were in the lobby; outgoing rates include their messages and incoming rates miss theirs.`);
   }
+  if (r.closes.length > 0) {
+    w.push(`${r.closes.length} connection(s) closed during the run (${r.closes.join(', ')}); later numbers cover fewer players.`);
+  }
   if (r.deliveryRatio !== null && r.deliveryRatio < DELIVERY_WARN_RATIO) {
-    w.push(`Move delivery was ${(r.deliveryRatio * 100).toFixed(1)}% of expected; some moves never reached other players.`);
+    const pct = (r.deliveryRatio * 100).toFixed(1);
+    w.push(
+      r.closes.length > 0
+        ? `Move delivery was ${pct}% of expected, because connection(s) closed during the run.`
+        : `Move delivery was ${pct}% of expected; some moves never reached other players.`,
+    );
   }
   if (r.eventLoopMs.p99 > EVENT_LOOP_WARN_MS) {
     w.push(`The load generator lagged (event-loop p99 ${fmt(r.eventLoopMs.p99)} ms); delays may be the client's, not the server's.`);
@@ -77,8 +89,8 @@ export function formatReport(r: ScenarioReport): string {
     `free tier   ${fmt(r.freeTierHoursPerDay)} hours/day of this load before the daily request limit`,
     `move delay  p50 ${fmt(r.delayMs.p50)} ms, p95 ${fmt(r.delayMs.p95)} ms, max ${fmt(r.delayMs.max)} ms (${r.delayMs.count} deliveries)`,
     `delivery    ${r.deliveryRatio === null ? 'n/a' : `${(r.deliveryRatio * 100).toFixed(1)}%`} of ${r.expectedDeliveries} expected`,
-    `problems    corrections ${r.corrections}, request errors ${r.requestErrors}, reconnects ${r.reconnects}, other players ${r.extraPlayers}`,
-    `generator   event-loop p99 ${fmt(r.eventLoopMs.p99)} ms, max ${fmt(r.eventLoopMs.max)} ms`,
+    `problems    corrections ${r.corrections}, request errors ${r.requestErrors}, reconnects ${r.reconnects}, closes ${r.closes.length}, other players ${r.extraPlayers}`,
+    `generator   event-loop p99 ${fmt(r.eventLoopMs.p99)} ms, max ${fmt(r.eventLoopMs.max)} ms (includes the ${EVENT_LOOP_RESOLUTION_MS} ms sampling interval; about ${EVENT_LOOP_RESOLUTION_MS} ms means no lag)`,
   ];
   if (r.warnings.length === 0) lines.push('No problems seen.');
   else for (const w of r.warnings) lines.push(`WARNING: ${w}`);
