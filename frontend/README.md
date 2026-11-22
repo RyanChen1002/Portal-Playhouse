@@ -4,7 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.10 | 11/22/2026 | Added a static Vercel build with the shared browser client, one public asset list, build checks in CI, and built-site preview. Cleaned up outdated integration notes and recorded current verification and remaining acceptance work. |
+| 0.11 | 11/22/2026 | Added Create account to the welcome screen using the existing shared signUp method, with clear errors and sign-in/offline switching. Verified 84 frontend/build tests and a mock-client browser signup flow. Earlier today (0.10): added the static Vercel build, shared browser client, public asset list, CI build checks, and built-site preview. |
 | 0.9 | 11/21/2026 | Added local development login, live lobby and Portal Partners frontend integration through the shared client, and separate practice mode for the other games. Recorded simulated-client verification and outstanding hosted checks. Earlier today (0.8): updated scene-first controls and five-level practice progression while preserving original Portal Partners rules. |
 | 0.7 | 11/16/2026 | Added five practice games (0.5), direct-entry rooms (0.6), then a circular furnished courtyard, dismissible rules, and Escape/close controls. Consolidated local plans. Online integration remains pending. |
 | 0.4 | 11/15/2026 | Recorded the merged backend client, Node 22 requirement, and remaining frontend integration work; demo behavior unchanged. Clarified review instructions; screenshots belong in the PR only. |
@@ -18,6 +18,8 @@ Choose **Explore the playhouse**, select a character, and enter. Alternatively u
 ## Local online integration (in progress)
 
 Choose **Sign in to online play** to use an existing development account. This connects the local UI to the development Supabase project and Cloudflare runtime; it does not deploy the frontend. The original offline practice route remains available. Online credentials are handled by the shared client, with its session stored in browser local storage.
+
+Choose **Create an account** to register with a display name, email, and password through the shared client's `signUp` method. A successful response opens character selection using the returned profile. Duplicate names/emails, password errors and service failures keep the form open; passwords are cleared after each attempt. If signup returns no session, the UI explains that email confirmation may be needed and offers switching to sign-in. The current shared client requires a session for signup success; hosted signup settings and email delivery have not been verified. No real accounts were created during the local checks.
 
 The local preview server bundles the existing shared TypeScript client in memory at `/portal-client.js`, using the pinned esbuild dependency. The static build generates the same client file for deployment. Run `npm ci` with Node 22 first.
 
