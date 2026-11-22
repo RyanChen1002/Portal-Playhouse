@@ -5,7 +5,7 @@ import {rooms as gameRooms,nearbyRoom,canEnterRoom} from './games/rooms.js';
 const host = document.querySelector('#world');
 host.replaceChildren();
 host.setAttribute('aria-label', '3D playhouse. WASD or arrow keys to walk. K enters a nearby game. Tab leaves the world.');
-const hint = document.createElement('div'); hint.className = 'world-hint'; hint.textContent = 'Click the world, then WASD to explore'; host.append(hint);
+const hint = document.createElement('div'); hint.className = 'world-hint'; hint.textContent = 'WASD to explore · K to play'; host.append(hint);
 
 
 let selected = 0, active = false, worldView = true;
@@ -13,14 +13,29 @@ let currentRoom='lobby', zoom=1, lockedExample=false, activeGameId=null, dismiss
 let buildTransform=null;
 let updateRoomBoards=()=>{};
 const nearbyBoard=document.createElement('section');nearbyBoard.className='nearby-game-board';nearbyBoard.hidden=true;nearbyBoard.setAttribute('aria-label','Nearby game rules');host.append(nearbyBoard);
-let boardKey='';
-function dismissBoard(){dismissedRoom=portalTarget?.id;nearbyBoard.hidden=true;host.focus();}
+let boardKey='',rulesOpen=false;
+function dismissBoard(){rulesOpen=false;dismissedRoom=portalTarget?.id;nearbyBoard.hidden=true;host.focus();}
 nearbyBoard.addEventListener('click',e=>{if(e.target.closest('[data-dismiss-board]'))dismissBoard();});
 const cameraTarget=new THREE.Vector3(0,0,2);
 const keys = new Set();
 const obstacles = [];
 let scene, camera, renderer, hero, portalTarget;
 const walkers = [], portals = [];
+const livePeers=new Map();let onlineSnapshot=null;
+function clearPeers(){for(const peer of livePeers.values()){scene.remove(peer.mesh);peer.mesh.traverse(o=>o.geometry?.dispose());}livePeers.clear();}
+window.addEventListener('playhouse-online-state',event=>{
+ const {snapshot,state,reset}=event.detail;onlineSnapshot=snapshot;
+ walkers.forEach(p=>p.mesh.visible=false);if(reset||state!=='connected')keys.clear();
+ if(reset&&snapshot.self.roomId==='lobby'&&snapshot.self.position){hero.position.set(snapshot.self.position.x,0,snapshot.self.position.z);hero.rotation.y=snapshot.self.rotation;}
+ const others=snapshot.self.roomId==='lobby'?snapshot.room.players.filter(p=>p.id!==snapshot.self.playerId&&p.position):[];
+ for(const [id,peer]of livePeers)if(!others.some(p=>p.id===id)){scene.remove(peer.mesh);peer.mesh.traverse(o=>o.geometry?.dispose());livePeers.delete(id);}
+ for(const p of others){let peer=livePeers.get(p.id);if(!peer){const mesh=character(Number(p.avatarId.slice(-2))-1);mesh.position.set(p.position.x,0,p.position.z);scene.add(mesh);peer={mesh};livePeers.set(p.id,peer);}peer.target=p.position;peer.rotation=p.rotation;}
+ document.querySelector('.demo-tag').textContent='Online dev · '+state;
+ document.querySelector('.world-top .pill:last-child').textContent=state+' · '+snapshot.room.players.length+' players in this space';drawBoards();
+});
+window.addEventListener('playhouse-offline',()=>{onlineSnapshot=null;clearPeers();walkers.forEach(p=>p.mesh.visible=true);document.querySelector('.demo-tag').textContent='Local practice · Not saved online';drawBoards();});
+window.addEventListener('playhouse-practice-away',()=>{keys.clear();clearPeers();document.querySelector('.demo-tag').textContent='Local practice · Online world disconnected';});
+window.addEventListener('playhouse-profile',event=>{setAvatar(Number(event.detail.avatarId.slice(-2))-1);});
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const materials = new Map();
 function material(color){if(!materials.has(color))materials.set(color,new THREE.MeshStandardMaterial({color,roughness:.85}));return materials.get(color);}
@@ -90,7 +105,15 @@ function makeBoard(r){
  const sign=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,depthTest:true}));sign.position.set(point.x,2.2,point.z);sign.scale.set(3.8,2.18,1);scene.add(sign);signs.push({r,cv,tx,sign,point});
  cylinder(scene,point.x,.6,point.z,.045,1.2,0x657b70);solid(point.x,point.z,.15,.15);
 }
-function drawBoards(){for(const {r,cv,tx}of signs){const ctx=cv.getContext('2d'),locked=lockedExample&&r.id==='workshop',playing=activeGameId===r.id;ctx.fillStyle='#fffdf4';ctx.fillRect(0,0,768,440);ctx.fillStyle=locked?'#a26558':playing?'#a5833e':'#3a7864';ctx.fillRect(0,0,768,62);ctx.fillStyle='#fff';ctx.font='bold 29px sans-serif';ctx.fillText(locked?'LOCKED · DEMO':playing?'PLAYING · PRACTICE':'OPEN · K TO PLAY',28,42);ctx.fillStyle='#294d43';ctx.font='bold 35px sans-serif';ctx.fillText(r.name,28,114,710);ctx.font='24px sans-serif';let y=160;for(const text of [r.description,...r.steps]){let line='';for(const word of text.split(' ')){if(ctx.measureText(line+word).width>705){ctx.fillText(line,28,y);line='';y+=29;}line+=word+' ';}ctx.fillText(line,28,y);y+=33;}tx.needsUpdate=true;}}
+function drawBoards(){for(const {r,cv,tx}of signs){
+ const ctx=cv.getContext('2d'),locked=lockedExample&&r.id==='workshop',playing=activeGameId===r.id;
+ ctx.clearRect(0,0,768,440);ctx.fillStyle='#fffdf7';ctx.beginPath();ctx.roundRect(0,0,768,440,40);ctx.fill();
+ const remote=r.id==='portal'&&onlineSnapshot?.board.find(b=>b.id==='portal');
+ ctx.fillStyle=locked?'#a35b50':'#7154bd';ctx.font='700 30px sans-serif';ctx.fillText('0'+r.number+' / '+(remote?(remote.status==='playing'?'PLAYING · LOCKED':'ONLINE · '+remote.players.length+'/2'):locked?'LOCKED EXAMPLE':playing?'LOCAL ROUND':'LOCAL PRACTICE'),35,65);
+ ctx.fillStyle='#302742';ctx.font='700 46px sans-serif';ctx.fillText(r.name,35,145,695);
+ ctx.font='32px sans-serif';ctx.fillStyle='#796e85';ctx.fillText(r.tag,35,207,695);ctx.fillText('2 teammates · '+(r.id==='portal'?'Original challenge':'5 practice levels'),35,273);
+ ctx.fillStyle=locked?'#a35b50':'#7154bd';ctx.font='700 35px sans-serif';ctx.fillText(locked?'Turn off locked example':'K  PLAY    /    H  HOW TO',35,365);tx.needsUpdate=true;
+}}
 updateRoomBoards=drawBoards;
 function buildRoom(r){
  const root=scene,group=new THREE.Group();group.position.set(r.cx,0,r.cz);group.rotation.y=r.rotation;root.add(group);scene=group;buildTransform=r;
@@ -122,13 +145,18 @@ function buildRoom(r){
 function buildWorld(){
  scene=new THREE.Scene();scene.background=new THREE.Color(0xe1e9df);scene.fog=new THREE.Fog(0xe1e9df,65,110);
  scene.add(new THREE.HemisphereLight(0xfff7e8,0x92ab98,2));const sun=new THREE.DirectionalLight(0xffedd2,2.4);sun.position.set(-12,28,18);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30});sun.shadow.normalBias=.035;scene.add(sun);
- cylinder(scene,0,-.32,0,23,.6,0xb9cbb5);cylinder(scene,0,.015,0,10.5,.08,0xeadfc8);
- const trim=new THREE.Mesh(new THREE.RingGeometry(8.8,9.2,96),material(0xc4b28f));trim.rotation.x=-Math.PI/2;trim.position.y=.07;scene.add(trim);
+ cylinder(scene,0,-.32,0,23,.6,0xc7c9de);
+ softBox(scene,0,.015,0,19,.08,18,0xf4eee6,.02);
+ // Flat inlaid zones replace the ring road; existing collision footprints stay unchanged.
+ softBox(scene,-4,.065,2,6,.02,9,0xe5d9ec,.01);softBox(scene,4,.065,-2,6,.02,9,0xd7e7de,.01);
+ for(let x=-9;x<=9;x+=1.5)box(scene,x,.07,0,.018,.012,18,0xe4ddd4);
+ for(let z=-9;z<=9;z+=1.5)box(scene,0,.07,z,18,.012,.018,0xe4ddd4);
+
  for(const r of gameRooms){const path=new THREE.Group();path.rotation.y=r.rotation;scene.add(path);box(path,0,.07,-8.5,2.4,.04,6,0xf3ead9);buildRoom(r);}
  // Compact courtyard: seats and planting stay between the five radial paths.
  cylinder(scene,0,.3,0,1.5,.6,0xe4ddcd);cylinder(scene,0,.62,0,1.35,.04,0x6c8464);solid(0,0,3,3);
  for(let i=0;i<10;i++){const a=i*2.4;const leaf=sphere(scene,Math.sin(a)*.8,1+(i%3)*.2,Math.cos(a)*.8,.35,i%2?0x659b78:0x8ab58b,.6,1.7,.8);leaf.rotation.z=Math.sin(a)*.5;}
- for(let i=0;i<5;i++){const a=(-54+i*72)*Math.PI/180,x=Math.sin(a)*6,z=Math.cos(a)*6;cylinder(scene,x,.35,z,.7,.65,[0xd6ac91,0xb7b6d2,0xa3c5b6,0xe0ca91,0xa4c2cd][i]);solid(x,z,1.4,1.4);const px=Math.sin(a)*8,pz=Math.cos(a)*8;plant(px,pz);}
+ for(let i=0;i<5;i++){const a=(-54+i*72)*Math.PI/180,x=Math.sin(a)*6,z=Math.cos(a)*6;const fabric=[0xe8a78b,0xaca0d4,0x8abbaa,0xe6c878,0x91bace][i];softBox(scene,x,.37,z,1.25,.5,1.25,fabric,.13);softBox(scene,x,.78,z-.45,1.2,.55,.25,fabric,.09);for(const dx of [-.43,.43])for(const dz of [-.4,.4])cylinder(scene,x+dx,.12,z+dz,.04,.22,0x514b60);solid(x,z,1.4,1.4);const px=Math.sin(a)*8,pz=Math.cos(a)*8;plant(px,pz);}
  hero=character(selected);hero.position.set(0,0,4);scene.add(hero);
  for(const [i,x,z]of[[3,-3,1],[5,3,-2],[8,5,3]]){const npc=character(i);npc.position.set(x,0,z);scene.add(npc);walkers.push({mesh:npc,x,z});}
  camera=new THREE.PerspectiveCamera(45,1,.1,150);camera.position.set(8,30,34);camera.lookAt(0,0,0);
@@ -140,12 +168,14 @@ function canMove(x,z){return Math.hypot(x,z)<23&&!obstacles.some(o=>{const dx=x-
 function setAvatar(index){selected=index;if(!hero)return;const replacement=character(index);replacement.position.copy(hero.position);replacement.rotation.copy(hero.rotation);scene.remove(hero);hero.traverse(o=>o.geometry?.dispose());hero=replacement;scene.add(hero);}
 let last=performance.now();
 function frame(now){requestAnimationFrame(frame);if(!renderer)return;const dt=Math.min((now-last)/1000,.04);last=now;const t=now/1000;let moving=false;
- if(active&&worldView&&!window.playhouseGameOpen&&document.activeElement===host&&!document.hidden){let dx=Number(keys.has('d')||keys.has('arrowright'))-Number(keys.has('a')||keys.has('arrowleft')),dz=Number(keys.has('s')||keys.has('arrowdown'))-Number(keys.has('w')||keys.has('arrowup'));if(dx||dz){const l=Math.hypot(dx,dz);dx/=l;dz/=l;const x=(dx*.953+dz*.303)*dt*4.8,z=(-dx*.303+dz*.953)*dt*4.8;if(canMove(hero.position.x+x,hero.position.z)){hero.position.x+=x;moving=true;}if(canMove(hero.position.x,hero.position.z+z)){hero.position.z+=z;moving=true;}hero.rotation.y=Math.atan2(x,z);}}
+ if(active&&worldView&&(!window.playhouseLive?.online||window.playhouseLive.connected)&&!window.playhouseGameOpen&&document.activeElement===host&&!document.hidden){let dx=Number(keys.has('d')||keys.has('arrowright'))-Number(keys.has('a')||keys.has('arrowleft')),dz=Number(keys.has('s')||keys.has('arrowdown'))-Number(keys.has('w')||keys.has('arrowup'));if(dx||dz){const l=Math.hypot(dx,dz);dx/=l;dz/=l;const x=(dx*.953+dz*.303)*dt*4.8,z=(-dx*.303+dz*.953)*dt*4.8;if(canMove(hero.position.x+x,hero.position.z)){hero.position.x+=x;moving=true;}if(canMove(hero.position.x,hero.position.z+z)){hero.position.z+=z;moving=true;}hero.rotation.y=Math.atan2(x,z);}}
+ if(moving&&window.playhouseLive?.online)window.playhouseLive.move({x:hero.position.x,y:0,z:hero.position.z},hero.rotation.y);
+ for(const peer of livePeers.values()){const movingPeer=Math.hypot(peer.mesh.position.x-peer.target.x,peer.mesh.position.z-peer.target.z)>.02;peer.mesh.position.lerp(new THREE.Vector3(peer.target.x,0,peer.target.z),Math.min(1,dt*12));peer.mesh.rotation.y=peer.rotation;animateCharacter(peer.mesh,t,movingPeer);}
  animateCharacter(hero,t,moving);walkers.forEach((npc,i)=>animateCharacter(npc.mesh,t+i,false));portalTarget=nearbyRoom(hero.position);
- if(dismissedRoom&&dismissedRoom!==portalTarget?.id)dismissedRoom=null;
- const locked=lockedExample&&portalTarget?.id==='workshop',nextKey=(portalTarget?.id||'')+locked;
+ if(dismissedRoom&&dismissedRoom!==portalTarget?.id)dismissedRoom=null;if(boardKey.split(':')[0]!==portalTarget?.id)rulesOpen=false;
+ const locked=lockedExample&&portalTarget?.id==='workshop',nextKey=(portalTarget?.id||'')+':'+locked;
  if(nextKey!==boardKey){boardKey=nextKey;if(portalTarget){const r=portalTarget;nearbyBoard.innerHTML='<button class="board-dismiss" data-dismiss-board aria-label="Close rules">×</button><span class="room-state">'+(locked?'LOCKED · DEMO':'OPEN · PRACTICE')+'</span><h2>'+r.name+'</h2><p>'+r.description+'</p><ol>'+r.steps.map(t=>'<li>'+t+'</li>').join('')+'</ol><p class="board-controls">WASD: walk · E: interact · Q: switch · R: rotate</p><strong>'+(locked?'Turn off the locked-room example to play':'K to play · '+Math.round(r.time/60)+' minutes')+'</strong><small>Esc closes rules · H shows them again</small>';}}
- nearbyBoard.hidden=!portalTarget||dismissedRoom===portalTarget.id||window.playhouseGameOpen;
+ nearbyBoard.hidden=!portalTarget||!rulesOpen||window.playhouseGameOpen;
  hint.textContent=portalTarget?(locked?'Locked example · switch it off to play':'K · '+portalTarget.name+' · H rules · Esc dismiss'):'WASD / arrows · Walk to any room · K to play';
  const focus=new THREE.Vector3(hero.position.x*.35,0,hero.position.z*.35);cameraTarget.lerp(focus,reduced.matches?1:Math.min(1,dt*4));camera.position.copy(cameraTarget).add(new THREE.Vector3(8*zoom,30*zoom,34*zoom));camera.lookAt(cameraTarget);
  if(portalTarget){const sign=signs.find(s=>s.r.id===portalTarget.id),point=new THREE.Vector3(sign.point.x,3.2,sign.point.z).project(camera);nearbyBoard.style.left=Math.max(8,Math.min(host.clientWidth-312,(point.x+1)*host.clientWidth/2-150))+'px';nearbyBoard.style.top=Math.max(55,Math.min(host.clientHeight-nearbyBoard.offsetHeight-55,(1-point.y)*host.clientHeight/2))+'px';}
@@ -157,7 +187,7 @@ function clearKeys(){keys.clear();}
 window.addEventListener('blur',clearKeys);document.addEventListener('visibilitychange',clearKeys);host.addEventListener('blur',clearKeys);
 // Clicking anywhere on the open floor returns keyboard control to walking.
 host.addEventListener('pointerdown',e=>{if(e.target===renderer?.domElement)host.focus();});
-host.addEventListener('keydown',event=>{const key=event.key.toLowerCase();if(key==='escape'&&!nearbyBoard.hidden){event.preventDefault();dismissBoard();return;}if(event.target!==host)return;if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key)){event.preventDefault();keys.add(key);}if(key==='h'&&portalTarget){dismissedRoom=null;event.preventDefault();}if(key==='k'&&portalTarget&&!event.repeat){event.preventDefault();if(canEnterRoom(portalTarget.id,hero.position,lockedExample)){clearKeys();window.dispatchEvent(new CustomEvent('playhouse-enter-game',{detail:{id:portalTarget.id}}));}}});
+host.addEventListener('keydown',event=>{const key=event.key.toLowerCase();if(key==='escape'&&!nearbyBoard.hidden){event.preventDefault();dismissBoard();return;}if(event.target!==host)return;if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(key)){event.preventDefault();keys.add(key);}if(key==='h'&&portalTarget){dismissedRoom=null;rulesOpen=!rulesOpen;event.preventDefault();}if(key==='k'&&portalTarget&&!event.repeat){event.preventDefault();if(canEnterRoom(portalTarget.id,hero.position,lockedExample)){clearKeys();window.dispatchEvent(new CustomEvent('playhouse-enter-game',{detail:{id:portalTarget.id}}));}}});
 window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));window.addEventListener('hashchange',()=>{worldView=location.hash==='#lobby'||!location.hash;clearKeys();if(worldView)requestAnimationFrame(resize);});
 window.addEventListener('playhouse-game-status',e=>{activeGameId=e.detail?.id||null;drawBoards();});
 const controls=document.createElement('div');controls.className='camera-controls';for(const [text,delta]of[['Zoom in',-.15],['Zoom out',.15]]){const b=document.createElement('button');b.textContent=text;b.onclick=()=>{zoom=THREE.MathUtils.clamp(zoom+delta,.6,1.5);host.focus();};controls.append(b);}host.append(controls);
@@ -170,6 +200,7 @@ const picker=document.querySelector('#welcome-avatars');
 const symbols=['🦊','🧭','🧙','🌿','🌷','🧚','🛡','🌙','🦁','🎻'];
 for(let i=0;i<20;i++){const button=document.createElement('button');button.type='button';button.className='character-tile';button.setAttribute('aria-pressed',String(i===0));button.innerHTML=`<span aria-hidden="true">${symbols[i%10]}</span><strong>${names[i]}</strong>`;button.onclick=()=>{setAvatar(i);picker.querySelectorAll('button').forEach((b,j)=>b.setAttribute('aria-pressed',String(j===i)));document.querySelector('#chosen-name').textContent=names[i];};picker.append(button);}
 function selectStep(){document.querySelector('#login-step').hidden=true;document.querySelector('#character-step').hidden=false;document.querySelector('#character-title').focus();}
+window.addEventListener('playhouse-online-enter',()=>{gate.hidden=true;appShell.forEach(el=>el.hidden=false);active=true;worldView=true;location.hash='lobby';requestAnimationFrame(resize);host.focus();});
 document.querySelector('#demo-enter').onclick=selectStep;
 document.querySelector('#login-form').onsubmit=event=>{event.preventDefault();const email=document.querySelector('#login-email'),password=document.querySelector('#login-password');if(email.value==='explorer@example.test'&&password.value==='playhouse-demo'){password.value='';document.querySelector('#login-error').textContent='';selectStep();}else{password.value='';document.querySelector('#login-error').textContent='Use the sample credentials shown below, or choose Explore demo.';}};
 document.querySelector('#enter-world').onclick=()=>{document.querySelector(`#avatar-picker input[value="avatar-${String(selected+1).padStart(2,'0')}"]`).checked=true;document.querySelector('#profile-form').requestSubmit();gate.hidden=true;appShell.forEach(el=>el.hidden=false);active=true;worldView=true;location.hash='lobby';requestAnimationFrame(resize);host.focus();};
@@ -196,3 +227,5 @@ if(renderer){
  document.querySelector('#profile-form').addEventListener('submit',()=>{if(document.querySelector('#display-name').getAttribute('aria-invalid')!=='true')portrait();});
  portrait();resize();
 }
+
+window.addEventListener('hashchange',()=>{if(active&&location.hash==='#lobby')requestAnimationFrame(()=>host.focus());});
