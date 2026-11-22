@@ -9,6 +9,7 @@ const files = [
   "world.css",
   "characters.js",
   "live.js",
+  "auth.js",
   "live-state.js",
   "games/rooms.js",
   "games/ui.js",

@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build:frontend": "node tools/build-frontend.cjs",
-    "test:frontend": "node --test frontend/games/*.test.mjs frontend/live-state.test.mjs tools/build-frontend.test.mjs",
+    "test:frontend": "node --test frontend/games/*.test.mjs frontend/*.test.mjs tools/build-frontend.test.mjs",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:db": "supabase test db",

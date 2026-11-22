@@ -5,6 +5,7 @@ import {
   leaveLiveRoom,
 } from "./live-state.js";
 import { createStage } from "./games/scene.js";
+import { authenticate } from "./auth.js";
 import { targets, near } from "./games/rules.js";
 
 // Dev only. Public browser credentials; never put a service/secret key here.
@@ -197,23 +198,50 @@ mode.className = "button secondary";
 mode.textContent = "Sign in to online play";
 form.before(mode);
 let authMode = false;
+let registering = false;
+const accountSwitch = document.createElement("button");
+accountSwitch.type = "button";
+accountSwitch.className = "button secondary";
+accountSwitch.id = "account-switch";
+accountSwitch.textContent = "Create an account";
+form.after(accountSwitch);
+const nameFields = document.createElement("div");
+nameFields.innerHTML = '<label for="signup-name">Display name</label><input id="signup-name" name="displayName" autocomplete="nickname" aria-describedby="signup-name-help login-error"><p id="signup-name-help" class="muted">Choose a unique name, 1–24 characters.</p>';
+form.prepend(nameFields);
+function renderAuth() {
+  nameFields.hidden = !registering;
+  $("#signup-name").disabled = !registering;
+  $("#signup-name").required = registering;
+  $("#login-email").autocomplete = authMode ? "email" : "off";
+  $("#login-password").autocomplete = registering ? "new-password" : authMode ? "current-password" : "off";
+  $("#login-password").placeholder = registering ? "At least 8 characters" : authMode ? "Your account password" : "Enter sample password";
+  mode.textContent = authMode ? "Use offline practice instead" : "Sign in to online play";
+  accountSwitch.textContent = registering ? "Already have an account? Sign in" : "Create an account";
+  form.querySelector("[type=submit]").textContent = registering ? "Create account and continue" : authMode ? "Sign in and play online" : "Enter practice mode";
+  $("#login-step .demo-disclosure").textContent = authMode
+    ? "Accounts use our development server. Portal Partners supports online play; the other four games are local practice."
+    : "Offline practice: explorer@example.test / playhouse-demo. Nothing is sent or saved.";
+  $("#login-error").textContent = "";
+  form.querySelectorAll("input").forEach(input => input.removeAttribute("aria-invalid"));
+}
+accountSwitch.onclick = () => {
+  if (busy) return;
+  if (!authMode) $("#login-email").value = "";
+  authMode = true;
+  registering = !registering;
+  $("#login-password").value = "";
+  renderAuth();
+  $(registering ? "#signup-name" : "#login-email").focus();
+};
 mode.onclick = () => {
+  if (busy) return;
   authMode = !authMode;
-  mode.textContent = authMode
-    ? "Use offline practice instead"
-    : "Sign in to online play";
+  registering = false;
   $("#login-email").value = authMode ? "" : "explorer@example.test";
   $("#login-password").value = "";
-  $("#login-password").placeholder = authMode
-    ? "Your development account password"
-    : "Enter sample password";
-  form.querySelector("[type=submit]").textContent = authMode
-    ? "Sign in and play online"
-    : "Enter practice mode";
-  $("#login-step .demo-disclosure").textContent = authMode
-    ? "Development accounts only. Portal Partners is online; the other four games are local practice."
-    : "Offline practice: explorer@example.test / playhouse-demo. Nothing is sent or saved.";
+  renderAuth();
 };
+renderAuth();
 form.onsubmit = async (event) => {
   if (!authMode) return offlineSubmit(event);
   event.preventDefault();
@@ -221,25 +249,31 @@ form.onsubmit = async (event) => {
   busy = true;
   const button = form.querySelector("[type=submit]");
   button.disabled = true;
+  mode.disabled = accountSwitch.disabled = $("#demo-enter").disabled = true;
+  form.setAttribute("aria-busy", "true");
+  $("#login-error").textContent = "";
+  form.querySelectorAll("input").forEach(input => input.removeAttribute("aria-invalid"));
   try {
     const c = await getClient();
-    applyProfile(
-      checked(
-        await c.signIn({
+    applyProfile(await authenticate(c, registering ? "signup" : "signin", {
           email: $("#login-email").value,
           password: $("#login-password").value,
-        }),
-      ),
-    );
+          displayName: $("#signup-name").value,
+        }));
     online = true;
     $("#login-error").textContent = "";
+    $("#demo-enter").disabled = false;
     $("#demo-enter").click();
   } catch (error) {
     $("#login-error").textContent = error.message;
+    const field = { displayName: "#signup-name", email: "#login-email", password: "#login-password" }[error.field];
+    if (field) { $(field).setAttribute("aria-invalid", "true"); $(field).focus(); }
   } finally {
     $("#login-password").value = "";
     busy = false;
     button.disabled = false;
+    mode.disabled = accountSwitch.disabled = $("#demo-enter").disabled = false;
+    form.removeAttribute("aria-busy");
   }
 };
 $("#enter-world").addEventListener(
