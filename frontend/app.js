@@ -6,6 +6,7 @@ const faces = ['•ᴗ•','•‿•','˘ᴗ˘','•ω•','◕ᴗ◕'];
 const avatars = Array.from({length:20}, (_,i) => ({id:`avatar-${String(i+1).padStart(2,'0')}`,color:palette[i%10],face:faces[Math.floor(i/4)]}));
 const profile = {id:'demo-player',displayName:'Explorer',avatarId:'avatar-01',winsTotal:0};
 let toastTimer;
+window.addEventListener('playhouse-profile',event=>{Object.assign(profile,event.detail);renderProfile();document.querySelector('#display-name').value=profile.displayName;});
 
 const $ = (selector) => document.querySelector(selector);
 function notice(message){

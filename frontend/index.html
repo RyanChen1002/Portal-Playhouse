@@ -9,6 +9,7 @@
   <script src="app.js" defer></script>
   <script type="module" src="world.js"></script>
   <script type="module" src="games/ui.js"></script>
+  <script type="module" src="live.js"></script>
   <link rel="stylesheet" href="games/games.css">
   <link rel="stylesheet" href="world.css">
 </head>
@@ -32,11 +33,11 @@
   <main hidden>
     <header class="topbar"><span><span class="status-dot"></span> PRACTICE MODE <span class="topbar-divider">/</span> <span id="breadcrumb">The lobby</span></span><span class="demo-tag">Sample data · Online play not connected</span></header>
     <section id="lobby" class="view" aria-labelledby="lobby-title">
-      <div class="page-heading"><div><p class="eyebrow">COME ON IN</p><h1 id="lobby-title">Welcome to the commons.</h1><p>Five adventures around one courtyard. Walk to a doorway, read the rules, and press K to play.</p></div></div>
+      <div class="page-heading"><div><p class="eyebrow">COME ON IN</p><h1 id="lobby-title">Welcome to the commons.</h1><p>Five rooms. One shared adventure. Walk to a doorway and press K to play.</p></div></div>
       <div class="lobby-layout">
         <div class="world-card">
-          <div class="world-top"><span class="pill"><span class="status-dot"></span> The commons</span><span class="pill"><span class="world-count">6</span> / 16 players · sample</span></div>
-          <div id="world" class="world" tabindex="0" role="group" aria-label="Illustrated lobby preview. Use arrow keys or W A S D to move your character. Tab to leave.">
+          <div class="world-top"><span class="pill"><span class="status-dot"></span> The commons</span><span class="pill">Local practice · 3 sample characters · World limit 16</span></div>
+          <div id="world" class="world" tabindex="0" role="group" aria-label="3D lobby. WASD or arrows to move. K to play. H for optional rules.">
             <div class="cloud cloud-one"></div><div class="cloud cloud-two"></div>
             <div class="island"><div class="tiles"></div><div class="path"></div><div class="garden garden-one">✿</div><div class="garden garden-two">✿</div></div>
             <div class="world-sign">THE COMMONS<span>meet here, go anywhere</span></div>
