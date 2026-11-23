@@ -1,13 +1,14 @@
 # Portal Playhouse — Initial Specification
 
-**Version:** 0.7
+**Version:** 0.8
 
-**Date:** 11/22/2026
+**Date:** 11/23/2026
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.8 | 11/23/2026 | Frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (FR-12); removed it from the §8 blockers. |
 | 0.7 | 11/22/2026 | **Scope change:** the first release now includes all five games (Portal Partners, Playhouse Cafe, Room Rescue, Tiny Train Team, Power-Up Workshop), each playable in real time by two players, instead of one game. Updated §1, FR-06, FR-08, FR-09, AC-03 to AC-06, §4, and §8, and listed the four new game designs as blockers. Removed "pending Ryan's approval" from the runtime wording, because the runtime design merged in PR #22. Shortened §7 to the chosen architecture, linking the research for the options compared. Defined real-time (server) play and offline practice. The disconnect policy is no longer marked Proposed, because the runtime design adopted it (PR #22). Recorded in §8 that the hosted two-account Portal Partners test passed on 11/22/2026. |
 | 0.6 | 11/18/2026 | AC-05 now points to the Portal Partners winning and losing sequences in the [runtime design](specs/2026-11-17-runtime-transport-design.md) §6 and §10, replacing "once the first game is chosen". No other requirements changed. |
 | 0.5 | 11/17/2026 | Pointers to the [runtime design](specs/2026-11-17-runtime-transport-design.md) (proposed by Adam; tentative until Ryan approves the pull request): the tentative runtime choice in FR-12, §7, and §8; removed "reconnect slot retention" and "disconnect timing" from the blockers; Portal Partners named as the first networked game. No other requirements changed. |
@@ -47,7 +48,7 @@ Register or sign in, load a profile, choose an avatar, enter the 3D lobby, check
 | FR-09 | Persist results in a separate Supabase result table per game type and show personal history and total wins across all games. **Proposed:** each winning participant gets one win per unique completed session; losses/cancellations add none. |
 | FR-10 | Show clear errors for invalid actions, full/locked rooms, authentication failures, disconnects, and storage failures. A rejected room join preserves the previous location. |
 | FR-11 | First release targets desktop browsers and keyboard controls. Camera view, controls, supported browsers, and exact layouts are open. |
-| FR-12 | Vercel hosts the UI with separate dev/production configuration and separate Supabase environments. Exact frontend framework remains open. The authoritative runtime is a Cloudflare Worker plus one World Durable Object over WebSocket; see the [runtime design](specs/2026-11-17-runtime-transport-design.md). |
+| FR-12 | Vercel hosts the UI with separate dev/production configuration and separate Supabase environments. The frontend uses static ES modules, with esbuild bundling the shared client; no frontend framework. The authoritative runtime is a Cloudflare Worker plus one World Durable Object over WebSocket; see the [runtime design](specs/2026-11-17-runtime-transport-design.md). |
 
 **Disconnect policy:** Cancel the active two-player round when a participant explicitly leaves or is declared disconnected; explain why, award no win, and offer return to the lobby. A 20-second reconnect grace retains the slot and position, and each game declares its own disconnect settings ([runtime design §5.6](specs/2026-11-17-runtime-transport-design.md)).
 
@@ -91,7 +92,7 @@ Implementation blockers:
 
 - Server designs for the other four games: rules with one character per player, interaction targets, timing, score, win/loss, disconnect settings, and result table. Hardest to synchronize: Room Rescue's shared sofa carry, Tiny Train Team's moving train, and Playhouse Cafe's carried items.
 - Whether real-time (server) play includes the five practice levels per game, and whether offline practice stays in the release.
-- Frontend framework; controls/camera/browsers; board timing and win-count defaults.
+- Controls/camera/browsers; board timing and win-count defaults.
 
 Ryan selected the current original character roster; final production artwork review, performance targets, dates, and swap work remain open.
 

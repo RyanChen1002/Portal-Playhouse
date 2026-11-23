@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.7 | 11/23/2026 | Selected services: the frontend uses static ES modules, with esbuild bundling the shared client; no frontend framework (confirmed by Ryan). |
 | 0.6 | 11/22/2026 | First release now ships all five games playable in real time, instead of one. Updated Project status (lobby and Portal Partners work over the runtime; the other four games are offline practice; the hosted two-account test passed), Planned first release, and Selected services (Cloudflare runtime). Added the runtime design, game ideas, and Cloudflare checklist to the repository links. |
 | 0.5 | 11/21/2026 | Added the load-check command (`scripts/load-check.ts`) and noted its manual hosted mode. |
 | 0.4 | 11/18/2026 | Added local runtime commands (`npm run test:runtime`, `npm run runtime:dev` with `runtime/.dev.vars`) and the link to the Cloudflare hosted setup checklist; integration tests now start the local runtime themselves. |
@@ -81,7 +82,7 @@ Portal Partners is built; each other game needs an approved server design first.
 - **Cloudflare Workers and Durable Objects:** The authoritative real-time runtime, over WebSocket ([runtime design](doc/specs/2026-11-17-runtime-transport-design.md)).
 - **Environments:** Separate development and production configurations, Supabase environments, and runtime Workers.
 
-These are selected services, not a claim that production deployment is configured. The frontend framework remains undecided.
+These are selected services, not a claim that production deployment is configured. The frontend uses static ES modules, with esbuild bundling the shared client; no frontend framework.
 
 ## Repository
 

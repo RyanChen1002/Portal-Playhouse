@@ -1,8 +1,8 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.9
+**Version:** 0.10
 
-**Date:** 11/22/2026
+**Date:** 11/23/2026
 
 **Project option:** A — Contract-first build with midpoint swap
 
@@ -10,6 +10,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.10 | 11/23/2026 | Frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (§1, §2); removed it from the §9 open decisions. |
 | 0.9 | 11/22/2026 | **Scope change** ([initial spec](initial-spec.md) v0.7): all five games are now first-release scope and playable in real time, so the other four games join the contract, with their interfaces open until their designs are approved (§3, §5–§7). Removed "tentative until Ryan approves" wording, because the runtime design merged in PR #22. Updated §8 to say the shared code also covers the real-time interface. Removed version labels such as "(v0.7)" and "Proposed v0.4" from the body, because those items are merged (PR #18, PR #22); **Proposed** now marks only items not yet agreed. Portal Partners interface unchanged. |
 | 0.8 | 11/18/2026 | Proposed by Adam on `feature/runtime-transport`; tentative until Ryan approves the pull request. Aligned the §5 message table and the §3 Result model with the built wire shapes in `shared/contracts/realtime.ts` (`world.snapshot`, `room.snapshot`, `player.left` reasons, `GameResult`). Added client notes on reconnect outcomes, late `failed` results, and close codes, and the connection's `closeReason`. Pointed the stale "game rules remain TBD" line to runtime design §6. |
 | 0.7 | 11/17/2026 | Proposed by Adam on `feature/runtime-transport`; **tentative until Ryan approves the pull request**. Records the runtime and real-time interface from the [runtime design](specs/2026-11-17-runtime-transport-design.md) (§11 there): a Cloudflare Worker plus one World Durable Object over WebSocket (tentative); first-message real-time authentication, refresh, one connection per account, idle limit; position-based `player.move`; the new message table (including `player.ready`) and error handling; the board delivered on the world connection instead of `GET /api/rooms`; `get_my_results` instead of `GET /api/me/results`; `Result.outcome` gains `cancelled` with `cancelReason`; the 20-second reconnect grace with per-game disconnect settings; cancellations saved but never counted as wins; and the `PortalClient` additions. Portal Partners is the first networked game. |
@@ -27,12 +28,12 @@ The [initial spec](initial-spec.md) defines product behavior and acceptance crit
 - **Ryan:** Frontend/UI, world, controls, avatar selection, board, game visuals, account/profile screens, and errors.
 - **Adam:** Auth integration, Supabase schema/access policies, authoritative multiplayer/game behavior, results, and win totals.
 - **Both:** Shared interfaces/mocks, architecture, security, integration, and contract changes.
-- Vercel hosts the frontend. Separate dev/production configuration and Supabase environments; no cross-environment account/result writes. **Runtime:** a Cloudflare Worker plus one World Durable Object on the Workers Free plan hosts the authoritative real-time runtime, with separate Workers (and therefore separate Durable Object state) for dev and production. Adam owns the Cloudflare account. The frontend framework remains open. Details: [runtime design](specs/2026-11-17-runtime-transport-design.md) §5.1.
+- Vercel hosts the frontend. Separate dev/production configuration and Supabase environments; no cross-environment account/result writes. **Runtime:** a Cloudflare Worker plus one World Durable Object on the Workers Free plan hosts the authoritative real-time runtime, with separate Workers (and therefore separate Durable Object state) for dev and production. Adam owns the Cloudflare account. The frontend uses static ES modules, with esbuild bundling the shared client; no frontend framework. Details: [runtime design](specs/2026-11-17-runtime-transport-design.md) §5.1.
 - Midpoint swap: add agreed features to each other's component. Date and additions remain TBD.
 
 ## 2. Authentication and Trust
 
-Supabase Auth handles sign-up, sign-in, sign-out, and sessions. The earlier custom `/api/auth/register`, `/api/auth/login`, and `/api/auth/logout` proposal is superseded: use the selected Supabase client flow. Email + password only, minimum password length 8. No email confirmation, password reset, magic links, OAuth, or anonymous sign-in for the first release ([auth research](research/auth-provider.md)). Frontend framework remains open; the shared client (§4) wraps `@supabase/supabase-js`.
+Supabase Auth handles sign-up, sign-in, sign-out, and sessions. The earlier custom `/api/auth/register`, `/api/auth/login`, and `/api/auth/logout` proposal is superseded: use the selected Supabase client flow. Email + password only, minimum password length 8. No email confirmation, password reset, magic links, OAuth, or anonymous sign-in for the first release ([auth research](research/auth-provider.md)). The shared client (§4) wraps `@supabase/supabase-js`.
 
 Protected application requests present a Supabase access token; the backend verifies it and derives identity from the authenticated session, not a client player ID. For the profile functions (§4), Supabase verifies the token and the functions use only the session's user ID. **Real-time authentication:** the client opens a WebSocket and sends `auth {token}` with its Supabase access token as the first message; no other message is accepted before it, and it must arrive within 10 seconds. The runtime verifies the token's signature against the Supabase project's public signing keys (asymmetric algorithms only), plus expiry, issuer, audience, and role. The verified user ID is the player ID. Before expiry the client sends `auth.refresh {token}` for the same user; otherwise the connection closes with `UNAUTHORIZED`. One connection per account: a new connection takes over the existing slot and the older one receives `session.replaced`. A connection idle for 10 minutes is closed. Details: [runtime design](specs/2026-11-17-runtime-transport-design.md) §5.2. Invalid/expired identity cannot mutate protected state.
 
@@ -183,4 +184,4 @@ Milestones: accounts/profile, two-user lobby/board/rooms, Portal Partners/result
 
 Both partners approve interface changes before building against them. Record versions in change history, newest first, and approval evidence in pull requests. Task branches from dev -> reviewed PR into dev -> separate release PR from dev to main. Humans review and merge. Breaking changes need a coordinated update plan; after 1.0 use major increments for incompatibilities and minor increments for compatible changes.
 
-This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: interfaces, rules, disconnect settings, and result schemas for the other four games; frontend framework; final timing and retry values (working values are in the design); final production artwork review; controls; performance targets; course dates; and swap additions.
+This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: interfaces, rules, disconnect settings, and result schemas for the other four games; final timing and retry values (working values are in the design); final production artwork review; controls; performance targets; course dates; and swap additions.
