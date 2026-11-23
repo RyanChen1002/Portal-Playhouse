@@ -1,13 +1,16 @@
 ﻿# Portal Playhouse - Five 3D Mini-Game Ideas
 
-**Version:** 0.2
+**Version:** 0.3
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/22/2026 | Added a status note: all five games are now first-release scope, playable in real time ([initial spec](initial-spec.md) v0.7). The proposals below are unchanged. |
 | 0.2 | 11/15/2026 | Prepared the proposals for sharing in the frontend review branch; no game selected. |
 | 0.1 | 11/14/2026 | Added five game proposals, visual references, and Ryan's direction for dedicated 3D game views and earned results. |
+
+**Status (11/22/2026):** all five games below are now first-release scope, each playable in real time by two players ([initial spec](initial-spec.md) v0.7). Portal Partners is built on the runtime. The other four have offline practice versions and need approved server designs. The text below is the original 11/14 proposal, kept for reference.
 
 ## What we already agreed on
 

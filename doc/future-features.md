@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/22/2026 | The five games are now first-release scope ([initial spec](initial-spec.md) v0.7), so "More mini-games" now means games beyond those five. Updated the player-count note. |
 | 0.2 | 11/17/2026 | Noted that raising capacity above 16 may require moving the runtime from one Durable Object to one per room. Added deferred disconnect settings (pause, finish alone), early-quit-as-cancel, and the board for players not admitted, from the runtime design. |
 | 0.1 | 11/12/2026 | Created the list, collecting features already deferred in the initial spec, backend design, and auth research. |
 
@@ -19,8 +20,8 @@ Add new ideas as they come up. Keep each entry to its source and the reason it w
 
 | Feature | Status | Source and notes |
 | --- | --- | --- |
-| More mini-games | Deferred | [Initial spec](initial-spec.md) §4. The first game is still TBD. |
-| Games with other player counts | Deferred | FR-06. The first game requires exactly two players; other sizes are "future extensions". |
+| Mini-games beyond the first five | Deferred | [Initial spec](initial-spec.md) §4. The first release includes Portal Partners, Playhouse Cafe, Room Rescue, Tiny Train Team, and Power-Up Workshop (scope change, 11/22/2026). |
+| Games with other player counts | Deferred | FR-06. The five first-release games are proposed to require exactly two players; other sizes are "future extensions". |
 | Competitive games | Idea | [Initial spec](initial-spec.md) §4 calls them "a future possibility". |
 | In-room spectator mode | Deferred | FR-07. Board score and status are visible to others in the first version; entering a playing room is not. |
 | Public matchmaking | Deferred | [Initial spec](initial-spec.md) §4. |

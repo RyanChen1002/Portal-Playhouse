@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.6 | 11/22/2026 | First release now ships all five games playable in real time, instead of one. Updated Project status (lobby and Portal Partners work over the runtime; the other four games are offline practice; the hosted two-account test passed), Planned first release, and Selected services (Cloudflare runtime). Added the runtime design, game ideas, and Cloudflare checklist to the repository links. |
 | 0.5 | 11/21/2026 | Added the load-check command (`scripts/load-check.ts`) and noted its manual hosted mode. |
 | 0.4 | 11/18/2026 | Added local runtime commands (`npm run test:runtime`, `npm run runtime:dev` with `runtime/.dev.vars`) and the link to the Cloudflare hosted setup checklist; integration tests now start the local runtime themselves. |
 | 0.3 | 11/17/2026 | Local setup now starts the stack with `npm run db:start`, which first generates the Git-ignored local signing keys. |
@@ -19,7 +20,7 @@ A browser-based multiplayer 3D world where players explore connected rooms and p
 
 ## Project status
 
-The backend foundation includes the local Supabase stack, profile schema and functions, shared client and mock, tests, and CI. This branch adds a local frontend preview with original characters and a walkable 3D world. The preview uses sample data and is not connected to Supabase or live multiplayer. The first game remains undecided. Hosted dev project setup follows the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md).
+Accounts, profiles, the shared 3D lobby, and **Portal Partners** work in real time: the frontend connects through the shared client to the Cloudflare runtime, which verifies Supabase sign-in, runs the world and the game, and saves results to Supabase. The other four games (Playhouse Cafe, Room Rescue, Tiny Train Team, and Power-Up Workshop) are offline practice versions only, with one person controlling both teammates and no saved results. On 11/22/2026, Ryan and Adam played Portal Partners together from two accounts on the hosted dev environment. Reconnects there are not yet tested. Hosted dev setup follows the [hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md) and the [Cloudflare hosted setup checklist](doc/checklists/cloudflare-hosted-setup.md).
 
 ## Backend development
 
@@ -68,26 +69,30 @@ See the [frontend guide](frontend/README.md) for controls.
 - Accounts and persistent player profiles with 20 avatar choices.
 - A shared 3D lobby and game rooms with an initial limit of 16 players across the whole world.
 - A room board showing availability, participants, timing, and scores.
-- One two-player cooperative mini-game, with participation locked during play.
-- Saved game results and personal win totals.
+- Five cooperative mini-games, each played in real time by two players on separate computers, with participation locked during play: Portal Partners, Playhouse Cafe, Room Rescue, Tiny Train Team, and Power-Up Workshop.
+- Saved game results and personal win totals across all five games.
 
-The first mini-game is **TBD**. Game rules, controls, and multiplayer architecture still need agreement. Revisit capacity after performance testing. See the spec for requirements, proposals, and acceptance criteria.
+Portal Partners is built; each other game needs an approved server design first. See the [initial spec](doc/initial-spec.md) for requirements, proposals, and acceptance criteria.
 
 ## Selected services
 
 - **Vercel:** Frontend hosting.
 - **Supabase:** Authentication and persistent data.
-- **Environments:** Separate development and production configurations and Supabase environments.
+- **Cloudflare Workers and Durable Objects:** The authoritative real-time runtime, over WebSocket ([runtime design](doc/specs/2026-11-17-runtime-transport-design.md)).
+- **Environments:** Separate development and production configurations, Supabase environments, and runtime Workers.
 
-These are selected services, not a claim that deployment is configured. The frontend framework, authoritative game runtime, and real-time transport remain undecided.
+These are selected services, not a claim that production deployment is configured. The frontend framework remains undecided.
 
 ## Repository
 
 - [Working agreement](doc/working-agreement.md)
 - [Initial spec](doc/initial-spec.md)
 - [Component contract](doc/component-contract.md)
+- [Runtime design](doc/specs/2026-11-17-runtime-transport-design.md)
+- [Mini-game ideas](doc/mini-game-ideas.md)
 - [Future features](doc/future-features.md)
 - [Hosted Supabase setup checklist](doc/checklists/supabase-hosted-setup.md)
+- [Cloudflare hosted setup checklist](doc/checklists/cloudflare-hosted-setup.md)
 - [Shared agent instructions](AGENTS.md)
 - [Superpowers source and setup](.agents/SUPERPOWERS.md)
 - [Ryan's AI agent logs](agent-logs/ryan/README.md)
