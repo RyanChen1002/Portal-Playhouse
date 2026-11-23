@@ -1,14 +1,16 @@
 # Runtime Design: Cloudflare Durable Objects World, Rooms, and Portal Partners
 
-**Version:** 0.2
+**Version:** 0.3
 
-**Date:** 11/18/2026
+**Date:** 11/22/2026
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
-**Status:** Approved by Adam on 11/17/2026; awaiting Ryan's approval in the pull request. Tentative: this branch (`feature/runtime-transport`) is the attempt to make Cloudflare Durable Objects work. Ryan's approval of the pull request approves this spec and the contract update in §11.
+**Status:** Approved by Adam on 11/17/2026; merged into `dev` in PR #22, with the contract update in §11.
 
-**Plan:** to be written after approval.
+**Scope:** the world, rooms, and Portal Partners. The other four games are now first-release scope ([initial spec](../initial-spec.md)); each needs its own design on this runtime.
+
+**Plan:** [runtime and transport plan](../plans/2026-11-17-runtime-transport.md).
 
 **Implements:** [initial spec](../initial-spec.md) FR-03 to FR-10 and the runtime part of FR-12; AC-02 to AC-07, and the runtime part of AC-08. **Interfaces:** [component contract](../component-contract.md) §2, §3, §5 to §7. **Research:** [runtime and transport](../research/runtime-transport.md), especially §3.2, §4.2, §6.2, and §7. **Game source:** [local playhouse plan](../plans/local-playhouse/README.md) and `frontend/games/rules.js` (PR #21).
 
@@ -18,6 +20,7 @@ Labels used below: **Decided** means Adam decided it in brainstorming on 11/17/2
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/22/2026 | Status updated: merged in PR #22, with a link to the plan. Added a scope note: the other four games are now release scope and need their own designs on this runtime, with pointers in §1, §2, and §12. The design itself is unchanged. |
 | 0.2 | 11/18/2026 | After the whole-branch review: §8.2 table now matches the built wire shapes (`world.snapshot`, `room.snapshot`, `player.left` reasons) and gains client notes on missed outcomes, late `failed` results, and close codes; §5.2 says a key set that never loaded gives `SERVICE_UNAVAILABLE`, and the client reports why a connection closed (`closeReason`); §7.3 notes that a permanently rejected result keeps retrying every 10 minutes; §12 renumbered, with a new item on spawn facing at round start. |
 | 0.1 | 11/17/2026 | Initial runtime design: one World Durable Object, position-based movement, 20-second reconnect grace, Portal Partners as the first networked game, and results (including cancellations) in Supabase. After review: a capped movement allowance, asymmetric local signing keys, and players on a closing bridge sent back to the side they came from. Added token-verification hardening, a cap on connections awaiting sign-in, sign-out handling, and the no-card Cloudflare account note; deferred the load check to integration testing. |
 
@@ -27,7 +30,7 @@ Make the multiplayer part of Portal Playhouse real: signed-in players share a 3D
 
 Why now: accounts and profiles are merged (PR #18), Ryan's frontend has a courtyard and five local demo games (PR #21), and the runtime is the main remaining architectural unknown (initial spec §7, §8). The research recommended Durable Objects for free-tier headroom; this branch tests that recommendation by building on it.
 
-Ryan's five games are a **demo**. This design is the real, server-backed version, starting with one game (**Decided**).
+Ryan's five games are a **demo**. This design is the real, server-backed version, starting with one game (**Decided**). The other four games have since become first-release scope; see **Scope** above.
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -46,7 +49,7 @@ Ryan's five games are a **demo**. This design is the real, server-backed version
 **Non-goals (this spec)**
 
 - Wiring the frontend to the real runtime. That is Ryan's work, against the client and mock delivered here (**Proposal**). Browser end-to-end checks follow when that wiring exists.
-- The other four demo games on the server, or on the server's board (**Decided**: one real room).
+- The other four demo games on the server, or on the server's board (**Decided**: one real room). Still out of scope for this design, but now first-release scope; see **Scope** above.
 - Pausing rounds on disconnect and finishing a round solo. Both are deferred game settings (§5.6; added to [future features](../future-features.md)).
 - Board access for players who are not admitted to the world (for example, after `WORLD_FULL`) (**Proposal**: deferred).
 - In-room spectators, more than one Portal Partners room, capacity above 16, and moving to one Durable Object per room (see future features).
@@ -371,6 +374,8 @@ Contract §9 requires both partners to approve interface changes before anyone b
 The contract text itself is updated on this branch before implementation, so Ryan reviews the spec and contract together. The initial spec's open decisions (§8 there) are updated to point here.
 
 ## 12. Open items for Ryan
+
+Resolved when Ryan approved and PR #22 merged; kept as a record.
 
 1. The whole runtime choice (Durable Objects, one World object) and position-based movement.
 2. The `PortalClient` additions (§8.1) and message list (§8.2), which he builds against.

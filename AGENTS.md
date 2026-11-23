@@ -4,6 +4,8 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/23/2026 | Added the confirmed frontend approach: static ES modules, with esbuild bundling the shared client; no frontend framework. |
+| 0.2 | 11/22/2026 | Updated confirmed clarifications: the runtime is chosen, and the first release ships all five games in real time (replacing "first game remains TBD"). |
 | 0.1 | 11/11/2026 | Require Version, Date, and Change history columns; use MM/DD/YYYY dates and one row per date, newest first. Require current project documents to be read before development and reread after updates or branch changes. |
 
 Read [the project README](README.md), [the working agreement](doc/working-agreement.md), [the initial spec](doc/initial-spec.md), and [the draft component contract](doc/component-contract.md) before starting work.
@@ -19,7 +21,7 @@ This is the single shared agent instruction file for Ryan and Adam. If your codi
   - Claude Code (Adam): the Superpowers plugin (user scope, same pinned commit) provides the skills and session-start hook. Use the plugin's `superpowers:*` skills; the repo copy under `.agents/skills/` is identical and does not need to be read separately.
   - Discovery in other coding tools is not verified.
 - Use the initial spec and component contract as the current review drafts. Keep a single requirements source rather than duplicating it under a toolkit folder.
-- Confirmed clarifications: first game remains TBD; Vercel hosts the frontend; Supabase provides Auth/database; use separate dev/production environments.
+- Confirmed clarifications: Vercel hosts the frontend (static ES modules, with esbuild bundling the shared client; no frontend framework); Supabase provides Auth/database; a Cloudflare Worker plus one World Durable Object is the real-time runtime; use separate dev/production environments. The first release ships all five games in real time (initial spec §1).
 
 ## Workflow
 
