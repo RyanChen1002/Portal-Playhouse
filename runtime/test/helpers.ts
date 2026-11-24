@@ -49,18 +49,19 @@ export interface FakeSupabase {
   jwksDown: boolean;
   /** Headers and bodies of RPC calls, for assertions. */
   rpcCalls: { url: string; headers: Headers; body: unknown }[];
-  /** Saved results by session id (idempotent, like `record_portal_partners_result`). */
+  /** Saved results by session id (idempotent, like `record_game_result`). */
   results: Map<string, string>;
-  /** When true, `record_portal_partners_result` fails at the network level. */
+  /** When true, `record_game_result` fails at the network level. */
   resultsDown: boolean;
-  /** Replaces the default `record_portal_partners_result` behaviour when set. */
+  /** Replaces the default `record_game_result` behaviour when set. */
   onRecord: ((body: RecordBody, fake: FakeSupabase) => Response | Promise<Response>) | null;
-  /** Calls made to `record_portal_partners_result`. */
+  /** Calls made to `record_game_result`. */
   recordCalls(): RecordBody[];
   restore(): void;
 }
 
 export interface RecordBody {
+  game_type: string;
   session_id: string;
   player_ids: string[];
   outcome: string;
@@ -70,7 +71,7 @@ export interface RecordBody {
   completed_at: string;
 }
 
-const RECORD_FN = '/rest/v1/rpc/record_portal_partners_result';
+const RECORD_FN = '/rest/v1/rpc/record_game_result';
 
 /** The default fake: one row per session id, returning the same result id on repeats. */
 export function recordIdempotently(body: RecordBody, fake: FakeSupabase): Response {

@@ -1,6 +1,6 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.10
+**Version:** 0.12
 
 **Date:** 11/23/2026
 
@@ -10,7 +10,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.10 | 11/23/2026 | Frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (§1, §2); removed it from the §9 open decisions. |
+| 0.12 | 11/23/2026 | After the final review: in a game room, an unknown `game.interact` target gets `VALIDATION_ERROR` (outside a game room the reply stays `NOT_IN_GAME`) (§5); the §7 Details link now points to the framework design §7. Earlier the same day (0.11): Ryan approved the [game framework design](specs/2026-11-23-game-framework-design.md): `gameType` is a game type from a list on `RoomSummary` and `Result`, replacing "Game types (open)" (§3); `game.interact` targets are checked by the server against the room's game, `game.state` and `room.snapshot.session` carry `gameType`, and `player.corrected.reason` may be game-declared (§5); one shared results table keyed by game type replaces one table per game (§7); removed the result schemas from the §9 open decisions. Earlier the same day (0.10): frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (§1, §2); removed it from the §9 open decisions. |
 | 0.9 | 11/22/2026 | **Scope change** ([initial spec](initial-spec.md) v0.7): all five games are now first-release scope and playable in real time, so the other four games join the contract, with their interfaces open until their designs are approved (§3, §5–§7). Removed "tentative until Ryan approves" wording, because the runtime design merged in PR #22. Updated §8 to say the shared code also covers the real-time interface. Removed version labels such as "(v0.7)" and "Proposed v0.4" from the body, because those items are merged (PR #18, PR #22); **Proposed** now marks only items not yet agreed. Portal Partners interface unchanged. |
 | 0.8 | 11/18/2026 | Proposed by Adam on `feature/runtime-transport`; tentative until Ryan approves the pull request. Aligned the §5 message table and the §3 Result model with the built wire shapes in `shared/contracts/realtime.ts` (`world.snapshot`, `room.snapshot`, `player.left` reasons, `GameResult`). Added client notes on reconnect outcomes, late `failed` results, and close codes, and the connection's `closeReason`. Pointed the stale "game rules remain TBD" line to runtime design §6. |
 | 0.7 | 11/17/2026 | Proposed by Adam on `feature/runtime-transport`; **tentative until Ryan approves the pull request**. Records the runtime and real-time interface from the [runtime design](specs/2026-11-17-runtime-transport-design.md) (§11 there): a Cloudflare Worker plus one World Durable Object over WebSocket (tentative); first-message real-time authentication, refresh, one connection per account, idle limit; position-based `player.move`; the new message table (including `player.ready`) and error handling; the board delivered on the world connection instead of `GET /api/rooms`; `get_my_results` instead of `GET /api/me/results`; `Result.outcome` gains `cancelled` with `cancelReason`; the 20-second reconnect grace with per-game disconnect settings; cancellations saved but never counted as wins; and the `PortalClient` additions. Portal Partners is the first networked game. |
@@ -49,15 +49,15 @@ Server-generated string IDs; Supabase user identity for player IDs; UTC ISO 8601
 | --- | --- |
 | Profile | `id: string`, `displayName: string`, `avatarId: string`, `winsTotal: integer >= 0` derived from trusted results |
 | Presence | `playerId`, `roomId`, `position: {x: number, y: number, z: number}`, `rotation: number` (proposed yaw in radians) |
-| RoomSummary | `id`, `name`, `gameType: string or null`, `minPlayers: integer`, `maxPlayers: integer`, `status: waiting/playing`, `players: [{id, displayName, avatarId}]`, `sessionId: string or null`, `startedAt: timestamp or null`, `durationSeconds: integer or null`, `score: number or null`, `revision: integer` |
+| RoomSummary | `id`, `name`, `gameType: a game type or null`, `minPlayers: integer`, `maxPlayers: integer`, `status: waiting/playing`, `players: [{id, displayName, avatarId}]`, `sessionId: string or null`, `startedAt: timestamp or null`, `durationSeconds: integer or null`, `score: number or null`, `revision: integer` |
 | Session | `id`, `roomId`, `gameType`, fixed `playerIds`, `status: waiting/playing/finished/cancelled`, `startedAt`, `completedAt` (nullable timestamps), `revision: integer` |
-| Result (`GameResult`) | `id`, `sessionId`, `gameType: "portal-partners"` (other games: see below), `outcome: win/loss/cancelled`, `cancelReason: left/disconnected or null` (set exactly when cancelled), `score: number`, `startedAt: timestamp`, `completedAt: timestamp` (for a cancellation, when it was cancelled), `durationSeconds: integer`, `players: [{id, displayName, avatarId}]` (each participant's current display name and avatar) |
+| Result (`GameResult`) | `id`, `sessionId`, `gameType: a game type`, `outcome: win/loss/cancelled`, `cancelReason: left/disconnected or null` (set exactly when cancelled), `score: number`, `startedAt: timestamp`, `completedAt: timestamp` (for a cancellation, when it was cancelled), `durationSeconds: integer`, `players: [{id, displayName, avatarId}]` (each participant's current display name and avatar) |
 
 Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; the local preview maps these IDs to the [20 original characters](plans/2026-11-12-local-3d-preview.md#character-roster) selected by Ryan on 11/13/2026. Names are UI labels; persist the avatar ID, not the character name. Reject unknown IDs. New profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
 
 **Display names:** trim leading and trailing whitespace and collapse internal runs to one space. The stored and returned name is that normalized form. It must be 1–24 Unicode code points, with no control or invisible/formatting characters. Names are **unique, compared case-insensitively**, and players may change them later, including changing only the case of their own name. The exact character sets are in the [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) and its plan. `shared/contracts/` exports the rule so the UI can validate before calling.
 
-**Game types (open):** only `portal-partners` is defined. Each other game's design adds its `gameType` value and what its score means.
+**Game types:** `RoomSummary.gameType` and `Result.gameType` are a game type from the list: `portal-partners` now, and each other game's design adds its value and what its score means ([framework design](specs/2026-11-23-game-framework-design.md) §8).
 
 World bounds, axes, score units, and movement cadence require agreement. Board timing is derived from authoritative start time; remaining time applies only to timed games.
 
@@ -114,22 +114,22 @@ WebSocket to the World Durable Object ([runtime design](specs/2026-11-17-runtime
 | Client -> backend | `room.join {roomId}` | Atomic admission; replies with the room snapshot or an error; failure preserves the current location |
 | Client -> backend | `room.leave {}` | Returns to the lobby at the room's entrance, keeping the world slot; leaving a playing room cancels the round |
 | Client -> backend | `game.ready {ready}` | Waiting rooms only |
-| Client -> backend | `game.interact {sessionId, actionId, target}` | Replaces the generic `game.action`; Portal Partners targets are `lever`, `crystal-a`, `crystal-b`, `exit`. Other games: open (below) |
+| Client -> backend | `game.interact {sessionId, actionId, target}` | Replaces the generic `game.action`; `target` is 1–32 letters, digits, or hyphens, checked by the server against the room's game; in a game room, an unknown target gets `VALIDATION_ERROR` (outside a game room the reply stays `NOT_IN_GAME`). Portal Partners targets are `lever`, `crystal-a`, `crystal-b`, `exit` |
 | Client -> backend | `world.leave {}` | Frees the slot immediately, with no grace |
 | Backend -> client | `world.snapshot {self, room, board, lastFinished}` | After auth and after every reconnect. `self` is `{playerId, roomId, position, rotation}`; `room` is a room snapshot (below); `board` is `RoomSummary[]`; `lastFinished` is the player's latest `game.finished` payload or null |
-| Backend -> client | `room.snapshot {roomId, summary, players, session, revision}` | A room snapshot: `summary` is the `RoomSummary` (null for the lobby), `players` the presences, `session` the running round's state with its `sessionId` (or null). Also the `request.accepted` payload of `room.join` and `room.leave` |
+| Backend -> client | `room.snapshot {roomId, summary, players, session, revision}` | A room snapshot: `summary` is the `RoomSummary` (null for the lobby), `players` the presences, `session` the running round's state with its `sessionId` and `gameType` (or null). Also the `request.accepted` payload of `room.join` and `room.leave` |
 | Backend -> location | `player.joined`, `player.left {playerId, reason, revision}` (`reason`: `moved`, `left`, `disconnected`, or `idle`), `player.updated {playerId, position, rotation, sequence, revision}`, `player.connection {playerId, connected}` | Same location only |
 | Backend -> location | `player.ready {playerId, ready, revision}` | Readiness changes in a waiting room |
-| Backend -> client | `player.corrected {sequence, position, rotation, reason}` | `reason`: `rejected` (a move was refused) or `bridgeClosed` (sent back off a closing bridge). Not an error and does not close the connection |
+| Backend -> client | `player.corrected {sequence, position, rotation, reason}` | `reason`: `rejected` (a move was refused) or a game-declared reason (Portal Partners: `bridgeClosed`, sent back off a closing bridge). Not an error and does not close the connection |
 | Backend -> all admitted | `room.updated {room}` | Board: availability, participants, score, and timing without spectator access |
-| Backend -> participants | `game.state {sessionId, revision, state}` | Portal Partners state: `bridgeOpen`, `latched`, `crystals`, `startedAt`, `durationSeconds`, `serverTime`. Other games: open (below) |
+| Backend -> participants | `game.state {sessionId, gameType, revision, state}` | Portal Partners state: `bridgeOpen`, `latched`, `crystals`, `startedAt`, `durationSeconds`, `serverTime`. Other games define their own fields (below) |
 | Backend -> participants | `game.finished {sessionId, outcome, score, persistenceStatus, reason?}` | `outcome`: `win`, `loss`, or `cancelled`; persistence pending/saved/failed. A cancellation reports `pending` first, not `notApplicable` |
 | Backend -> participants | `result.saved {sessionId, resultId}` | Confirm persistence after retry/pending state |
 | Backend -> client | `session.replaced {}` | Sent to an older connection before it is closed |
 
 Errors: the existing codes in §4 plus NOT_IN_GAME, INVALID_ACTION, and GAME_NOT_READY (readying outside a waiting room), all now adopted; they are added to `shared/contracts/`. `SERVICE_UNAVAILABLE` is also returned when a connection cannot be admitted (for example, Supabase unreachable or too many connections awaiting sign-in).
 
-**Other games (open):** each reuses this envelope, room lifecycle, readiness, and `game.finished`/`result.saved` flow. Its design defines its `game.interact` targets and fields, its `game.state` payload, and any new events, `player.corrected` reasons, or error codes.
+**Other games:** each reuses this envelope, room lifecycle, readiness, and `game.finished`/`result.saved` flow. Each game's design defines its targets, its `state` fields (always including `startedAt`, `durationSeconds`, and `serverTime`), and its correction reasons, on the framework in the [framework design](specs/2026-11-23-game-framework-design.md).
 
 **Client notes:**
 
@@ -162,11 +162,11 @@ Revisions: one counter per room, increasing on every change to that room's membe
 
 ## 7. Results and Wins
 
-Use one Supabase result table per game type (five tables). Each row is one session that ended in a win, loss, or cancellation, written by a runtime-only function, such as `record_portal_partners_result`. **Proposed:** the other four games follow the same pattern. The player-facing `get_my_results` and `winsTotal` cover all tables. Details: [runtime design](specs/2026-11-17-runtime-transport-design.md) §7. Maintain consistent Result fields and participant associations for aggregation/access checks.
+Use one shared Supabase results table keyed by game type ([framework design](specs/2026-11-23-game-framework-design.md) §7). Each row is one session that ended in a win, loss, or cancellation, written by the runtime-only function `record_game_result`. The player-facing `get_my_results` and `winsTotal` read this table, so every game is included. Details: [framework design](specs/2026-11-23-game-framework-design.md) §7 (storage) and [runtime design](specs/2026-11-17-runtime-transport-design.md) §7 (superseded for storage). Maintain consistent Result fields and participant associations for aggregation/access checks.
 
 Proposed persistence rules:
 
-- Unique `sessionId` per game result table; retries cannot duplicate a result. New replay, new session ID.
+- Unique `sessionId` in the results table; retries cannot duplicate a result. New replay, new session ID.
 - One cooperative win per participant per unique winning session; no wins for loss/cancellation. Derive total wins from authoritative records, or maintain totals atomically/idempotently if materialized.
 - **Cancelled sessions are saved** with outcome `cancelled` and a `cancelReason` (`left` or `disconnected`). They count as neither a win nor a loss and never add wins, and they appear in personal history. This is consistent with recording cancellation state. Rounds lost to a runtime restart are not saved.
 - If saving fails, report pending/failed status and retry on the backend; never claim unsaved results are persisted. Send `result.saved` after successful recovery. The runtime writes a pending result to durable storage before announcing `game.finished` with `persistenceStatus: "pending"`, then retries with backoff; the unique session ID makes retries safe. Details: [runtime design](specs/2026-11-17-runtime-transport-design.md) §7.3.
@@ -184,4 +184,4 @@ Milestones: accounts/profile, two-user lobby/board/rooms, Portal Partners/result
 
 Both partners approve interface changes before building against them. Record versions in change history, newest first, and approval evidence in pull requests. Task branches from dev -> reviewed PR into dev -> separate release PR from dev to main. Humans review and merge. Breaking changes need a coordinated update plan; after 1.0 use major increments for incompatibilities and minor increments for compatible changes.
 
-This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: interfaces, rules, disconnect settings, and result schemas for the other four games; final timing and retry values (working values are in the design); final production artwork review; controls; performance targets; course dates; and swap additions.
+This draft does not configure deployments, database projects, branch protections, or publish anything. Open decisions: interfaces, rules, and disconnect settings for the other four games; final timing and retry values (working values are in the design); final production artwork review; controls; performance targets; course dates; and swap additions.

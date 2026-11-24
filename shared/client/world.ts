@@ -11,12 +11,11 @@
 // - Moves are throttled to at most 20 sends per second; the latest held-back position is sent
 //   when the next slot opens.
 // - Requests are matched by requestId and time out after 10 s with SERVICE_UNAVAILABLE.
-import { ERROR_CODES } from '../contracts/index';
+import { ERROR_CODES, TARGET_PATTERN } from '../contracts/index';
 import type {
   AppError,
   ConnectionState,
   ErrorCode,
-  PortalPartnersTarget,
   Presence,
   Result,
   RoomId,
@@ -68,8 +67,6 @@ export const CLOSE_CODES = {
   worldFull: 4409,
   unavailable: 4503,
 } as const;
-
-const TARGETS: readonly string[] = ['lever', 'crystal-a', 'crystal-b', 'exit'];
 
 const ok = <T>(data: T): Result<T> => ({ data, error: null });
 const failWith = <T>(error: AppError): Result<T> => ({ data: null, error });
@@ -248,9 +245,9 @@ class Connection implements WorldConnection {
     }
   }
 
-  async interact(target: PortalPartnersTarget): Promise<Result<null>> {
+  async interact(target: string): Promise<Result<null>> {
     try {
-      if (typeof target !== 'string' || !TARGETS.includes(target)) {
+      if (typeof target !== 'string' || !TARGET_PATTERN.test(target)) {
         return fail('VALIDATION_ERROR', undefined, 'Interaction target is invalid.');
       }
       const session = this.snap?.room.session;
@@ -725,7 +722,7 @@ class Connection implements WorldConnection {
       }
       case 'game.state':
         if (!fresh(msg.payload.revision)) return;
-        room.session = { sessionId: msg.payload.sessionId, ...clone(msg.payload.state) };
+        room.session = { sessionId: msg.payload.sessionId, gameType: msg.payload.gameType, ...clone(msg.payload.state) };
         return;
       case 'game.finished': {
         const f = clone(msg.payload);

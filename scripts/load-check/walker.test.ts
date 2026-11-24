@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COURTYARD_SPAWN, checkMove, newTracker, type MoveTracker } from '../../shared/world/index';
+import { COURTYARD_AREA, COURTYARD_SPAWN, checkMove, newTracker, type MoveTracker } from '../../shared/world/index';
 import { WALK_RADIUS, WALK_SPEED, createWalker } from './walker';
 
 /** mulberry32: a small deterministic PRNG so the walks are repeatable. */
@@ -19,13 +19,13 @@ const STEPS = 5_000;
 /** Feeds the walk through the engine's movement check, advancing the clock by `gap(i)` ms per step. */
 function rejectedSteps(rateHz: number, gap: (i: number) => number, seed: number): number {
   const walker = createWalker(COURTYARD_SPAWN, WALK_SPEED / rateHz, seeded(seed));
-  let tracker: MoveTracker = newTracker(COURTYARD_SPAWN, 0, 0, 'courtyard');
+  let tracker: MoveTracker = newTracker(COURTYARD_SPAWN, 0, 0, COURTYARD_AREA);
   let now = 0;
   let rejected = 0;
   for (let i = 0; i < STEPS; i++) {
     now += gap(i);
     const step = walker.next();
-    const r = checkMove(tracker, 'courtyard', i, step.position, step.rotation, now);
+    const r = checkMove(tracker, COURTYARD_AREA, i, step.position, step.rotation, now);
     if (r.kind !== 'accepted') rejected++;
     if (r.kind !== 'stale') tracker = r.tracker;
   }

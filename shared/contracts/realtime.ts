@@ -2,6 +2,10 @@ import type { AvatarId, ErrorCode, Result } from './types';
 
 export type Vec3 = { x: number; y: number; z: number };
 export type RoomId = string; // 'lobby' | 'portal' in this release
+export const GAME_TYPES = ['portal-partners'] as const;
+export type GameType = (typeof GAME_TYPES)[number];
+/** Interaction targets are opaque ids; each game module decides which ones it accepts. */
+export const TARGET_PATTERN = /^[A-Za-z0-9-]{1,32}$/;
 export type PortalPartnersTarget = 'lever' | 'crystal-a' | 'crystal-b' | 'exit';
 export type Outcome = 'win' | 'loss' | 'cancelled';
 export type CancelReason = 'left' | 'disconnected';
@@ -22,7 +26,7 @@ export interface Presence extends PlayerCard {
 export interface RoomSummary {
   id: RoomId;
   name: string;
-  gameType: 'portal-partners';
+  gameType: GameType;
   minPlayers: number;
   maxPlayers: number;
   status: 'waiting' | 'playing';
@@ -33,14 +37,19 @@ export interface RoomSummary {
   score: number | null;
   revision: number;
 }
-export interface PortalPartnersState {
-  bridgeOpen: boolean;
-  latched: boolean;
-  crystals: [boolean, boolean];
+export interface GameStateBase {
   startedAt: string;
   durationSeconds: number;
   serverTime: string;
 }
+export interface PortalPartnersState extends GameStateBase {
+  bridgeOpen: boolean;
+  latched: boolean;
+  crystals: [boolean, boolean];
+}
+/** One member per game; each game adds its own. */
+export type GameStatePayload = { sessionId: string; revision: number; gameType: 'portal-partners'; state: PortalPartnersState };
+export type SessionSnapshot = { sessionId: string; gameType: 'portal-partners' } & PortalPartnersState;
 export interface GameFinished {
   sessionId: string;
   outcome: Outcome;
@@ -52,7 +61,7 @@ export interface RoomSnapshot {
   roomId: RoomId;
   summary: RoomSummary | null; // null for the lobby
   players: Presence[];
-  session: (PortalPartnersState & { sessionId: string }) | null;
+  session: SessionSnapshot | null;
   revision: number;
 }
 export interface WorldSnapshot {
@@ -69,7 +78,7 @@ export type ClientMessage =
   | { type: 'room.join'; requestId: string; payload: { roomId: RoomId } }
   | { type: 'room.leave'; requestId: string; payload: Record<string, never> }
   | { type: 'game.ready'; requestId: string; payload: { ready: boolean } }
-  | { type: 'game.interact'; requestId: string; payload: { sessionId: string; actionId: string; target: PortalPartnersTarget } }
+  | { type: 'game.interact'; requestId: string; payload: { sessionId: string; actionId: string; target: string } }
   | { type: 'world.leave'; requestId: string; payload: Record<string, never> };
 
 export type ServerMessage =
@@ -84,7 +93,7 @@ export type ServerMessage =
   | { type: 'player.ready'; payload: { playerId: string; ready: boolean; revision: number } }
   | { type: 'player.corrected'; payload: { sequence: number; position: Vec3; rotation: number; reason: CorrectionReason } }
   | { type: 'room.updated'; payload: { room: RoomSummary } }
-  | { type: 'game.state'; payload: { sessionId: string; revision: number; state: PortalPartnersState } }
+  | { type: 'game.state'; payload: GameStatePayload }
   | { type: 'game.finished'; payload: GameFinished }
   | { type: 'result.saved'; payload: { sessionId: string; resultId: string } }
   | { type: 'session.replaced'; payload: Record<string, never> };
@@ -92,7 +101,7 @@ export type ServerMessage =
 export interface GameResult {
   id: string;
   sessionId: string;
-  gameType: 'portal-partners';
+  gameType: GameType;
   outcome: Outcome;
   cancelReason: CancelReason | null;
   score: number;
@@ -101,8 +110,6 @@ export interface GameResult {
   durationSeconds: number;
   players: PlayerCard[];
 }
-
-const TARGETS: readonly string[] = ['lever', 'crystal-a', 'crystal-b', 'exit'];
 
 function invalid(message: string): Result<ClientMessage> {
   return { data: null, error: { code: 'VALIDATION_ERROR', message } };
@@ -182,9 +189,9 @@ export function parseClientMessage(raw: string): Result<ClientMessage> {
       const actionId = str(payload.actionId, 64);
       const target = payload.target;
       if (sessionId === null || actionId === null) return invalid('Session or action id is invalid.');
-      if (typeof target !== 'string' || !TARGETS.includes(target)) return invalid('Interaction target is invalid.');
+      if (typeof target !== 'string' || !TARGET_PATTERN.test(target)) return invalid('Interaction target is invalid.');
       return {
-        data: { type, requestId, payload: { sessionId, actionId, target: target as PortalPartnersTarget } },
+        data: { type, requestId, payload: { sessionId, actionId, target } },
         error: null,
       };
     }

@@ -201,6 +201,19 @@ describe('World rounds', () => {
     expect(s[0]!.payload.state.crystals).toEqual([false, true]);
   });
 
+  it('game.state and the session snapshot carry gameType', () => {
+    const tw = setup(2, [1, 2]);
+    ready(tw, 1);
+    ready(tw, 2);
+    const msgs = tw.messagesFor(conn(1));
+    const states = only(msgs, 'game.state');
+    expect(states.length).toBeGreaterThan(0);
+    for (const s of states) expect(s.payload.gameType).toBe('portal-partners');
+    const snaps = only(msgs, 'room.snapshot');
+    expect(snaps).toHaveLength(1);
+    expect(snaps[0]!.payload.session?.gameType).toBe('portal-partners');
+  });
+
   it('game.state at least once per second', () => {
     const { tw, t0 } = startGame(3);
     tw.advanceBy(1000);
@@ -244,6 +257,7 @@ describe('World rounds', () => {
     expect(tw.world.takeFinishedRounds()).toEqual([
       {
         sessionId: sid,
+        gameType: 'portal-partners',
         playerIds: ['p1', 'p2'],
         outcome: 'win',
         cancelReason: null,
@@ -294,6 +308,7 @@ describe('World rounds', () => {
     expect(tw.world.takeFinishedRounds()).toEqual([
       {
         sessionId: sid,
+        gameType: 'portal-partners',
         playerIds: ['p1', 'p2'],
         outcome: 'loss',
         cancelReason: null,
@@ -321,6 +336,34 @@ describe('World rounds', () => {
     expect(rounds).toHaveLength(1);
     expect(rounds[0]).toMatchObject({ outcome: 'loss', score: 2 });
     expect(finishedFor(tw, 1)).toEqual([{ sessionId: sid, outcome: 'loss', score: 2, persistenceStatus: 'pending' }]);
+  });
+
+  it('duplicate actionId replays the first reply', () => {
+    const { tw, sid } = startGame();
+    interact(tw, 1, sid, 'crystal-a', 'dup');
+    const first = lastReply(tw.messagesFor(conn(1)));
+    expect(first).toEqual({
+      type: 'request.error',
+      requestId: 'i-dup',
+      error: { code: 'INVALID_ACTION', message: 'Move closer to interact.' },
+    });
+
+    walk(tw, 1, SPAWN1, ON_PLATE);
+    walk(tw, 2, SPAWN2, v(0, -4));
+    walk(tw, 2, v(0, -4), v(1.5, -4));
+    interact(tw, 2, sid, 'lever');
+    walk(tw, 1, ON_PLATE, v(0, 2));
+    walk(tw, 1, v(0, 2), v(0, -2));
+    walk(tw, 1, v(0, -2), v(-6, -5));
+    for (const n of [1, 2]) expect(only(tw.messagesFor(conn(n)), 'player.corrected')).toEqual([]);
+
+    interact(tw, 1, sid, 'crystal-a', 'dup');
+    expect(lastReply(tw.messagesFor(conn(1)))).toEqual(first);
+    tw.advanceBy(1000);
+    tw.world.advance();
+    const states = only(tw.messagesFor(conn(1)), 'game.state');
+    expect(states.length).toBeGreaterThan(0);
+    expect(states[states.length - 1]!.payload.state.crystals).toEqual([false, false]);
   });
 
   it('bridge closes under a player', () => {
@@ -502,6 +545,7 @@ describe('World rounds', () => {
       expect(rounds).toEqual([
         {
           sessionId: sid,
+          gameType: 'portal-partners',
           playerIds: ['p1', 'p2'],
           outcome: 'loss',
           cancelReason: null,
@@ -528,6 +572,7 @@ describe('World rounds', () => {
     expect(tw.world.takeFinishedRounds()).toEqual([
       {
         sessionId: sid,
+        gameType: 'portal-partners',
         playerIds: ['p1', 'p2'],
         outcome: 'cancelled',
         cancelReason: 'disconnected',

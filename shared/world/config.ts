@@ -1,11 +1,11 @@
 import type { RoomId, Vec3 } from '../contracts';
+import { PORTAL_PARTNERS } from './games/portal-partners';
+import type { GameModule } from './games/types';
 
-export type Location = 'courtyard' | 'arena';
-
+/** A game room: where it is in the courtyard and which game it runs (name and gameType come from `game`). */
 export interface GameRoomConfig {
   id: RoomId;
-  name: string;
-  gameType: 'portal-partners';
+  game: GameModule;
   minPlayers: 2;
   maxPlayers: 2;
   entrance: Vec3;
@@ -16,7 +16,8 @@ export interface WorldConfig {
   worldLimit: number;
   graceMs: number;
   idleMs: number;
-  roundMs: number;
+  /** Test-only override applied to every game's round length; each game's own `roundMs` otherwise. */
+  roundMs?: number;
   rooms: GameRoomConfig[];
 }
 
@@ -40,36 +41,12 @@ export const COURTYARD_SPAWN_ROTATION = 0;
 // Portal Partners room
 export const PORTAL_ROOM: GameRoomConfig = {
   id: 'portal',
-  name: 'Portal Partners',
-  gameType: 'portal-partners',
+  game: PORTAL_PARTNERS,
   minPlayers: 2,
   maxPlayers: 2,
   entrance: { x: -10.5, y: 0, z: 0 },
   joinRadius: 3.2,
 };
-
-// Arena
-export const ARENA_SPEED = 4;
-export const ARENA_HALF_X = 9.6;
-export const ARENA_HALF_Z = 7.7;
-export const ARENA_SPAWNS: readonly [Vec3, Vec3] = [
-  { x: -3, y: 0, z: 6 },
-  { x: 0, y: 0, z: 6 },
-];
-export const ARENA_GAP_HALF_Z = 1.25;
-export const ARENA_BRIDGE_HALF_X = 1.2;
-export const ARENA_SETBACK_Z = 1.35;
-
-// Puzzle objects (x, z)
-export const PLATE = { x: -5, z: 3 } as const;
-export const PLATE_RADIUS = 1.3;
-export const LEVER = { x: 2, z: -4 } as const;
-export const CRYSTAL_A = { x: -6, z: -5 } as const;
-export const CRYSTAL_B = { x: 6, z: -5 } as const;
-export const EXIT = { x: 0, z: -7 } as const;
-export const EXIT_RADIUS = 2.3;
-export const INTERACT_RADIUS = 1.9;
-export const ROUND_MS = 180_000;
 
 // Movement budget
 export const BUDGET_REFILL_FACTOR = 1.25;
@@ -83,6 +60,5 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   worldLimit: WORLD_LIMIT,
   graceMs: GRACE_MS,
   idleMs: IDLE_MS,
-  roundMs: ROUND_MS,
   rooms: [PORTAL_ROOM],
 };

@@ -35,6 +35,24 @@ describe('parseClientMessage', () => {
     }
   });
 
+  it('accepts any target matching the target rule', () => {
+    for (const target of ['door', 'crystal-a', 'A1', 'x'.repeat(32)]) {
+      const r = parseClientMessage(
+        JSON.stringify({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target } }),
+      );
+      expect(r.error).toBeNull();
+      expect(r.data).toEqual({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target } });
+    }
+  });
+
+  it('rejects targets outside the target rule', () => {
+    for (const target of ['', 'x'.repeat(33), 'crystal_a', 'lever!', 'two words', 7]) {
+      expectInvalid(
+        JSON.stringify({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target } }),
+      );
+    }
+  });
+
   it('drops unknown extra keys', () => {
     const r = parseClientMessage(
       JSON.stringify({ type: 'game.ready', requestId: 'a', extra: 1, payload: { ready: false, x: 1 } }),
@@ -63,9 +81,6 @@ describe('parseClientMessage', () => {
     expectInvalid(JSON.stringify({ type: 'auth', requestId: 'a', payload: { token: 't'.repeat(4097) } }));
     expectInvalid(JSON.stringify({ type: 'auth', requestId: 'a', payload: { token: '' } }));
     expect(parseClientMessage(JSON.stringify({ type: 'auth', requestId: 'a', payload: { token: 't'.repeat(4096) } })).error).toBeNull();
-    expectInvalid(
-      JSON.stringify({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target: 'door' } }),
-    );
     expectInvalid(move({ sequence: 1.5 }));
     expectInvalid(move({ sequence: -1 }));
     expectInvalid(move({ sequence: Number.MAX_SAFE_INTEGER + 2 }));

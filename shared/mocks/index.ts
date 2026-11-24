@@ -52,7 +52,7 @@ export function createMockStore(): MockStore {
   return {
     accountsById,
     idsByEmail: new Map(),
-    world: new World({ now: () => Date.now(), newId: () => crypto.randomUUID() }),
+    world: new World({ now: () => Date.now(), newId: () => crypto.randomUUID(), onModuleError: (m) => console.warn(m) }),
     results: [],
     cardFor(playerId) {
       const p = accountsById.get(playerId)?.profile;

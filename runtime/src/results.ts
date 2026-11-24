@@ -1,3 +1,4 @@
+import type { GameType } from '../../shared/contracts';
 import type { FinishedRound } from '../../shared/world';
 
 /** Delays after the 1st, 2nd and 3rd failed attempt; every later failure waits RETRY_FOREVER_MS (spec §7.3). */
@@ -63,7 +64,11 @@ export class PendingResults {
     return this.sql
       .exec<Row>(`SELECT * FROM ${TABLE} WHERE next_attempt_at <= ? ORDER BY next_attempt_at`, this.now())
       .toArray()
-      .map((row) => JSON.parse(row.round) as FinishedRound);
+      .map((row) => {
+        // Rows saved before results carried a game type are all Portal Partners.
+        const round = JSON.parse(row.round) as Omit<FinishedRound, 'gameType'> & { gameType?: GameType };
+        return { ...round, gameType: round.gameType ?? 'portal-partners' };
+      });
   }
 
   markSaved(sessionId: string): void {

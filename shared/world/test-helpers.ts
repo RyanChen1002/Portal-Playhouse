@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import type { AvatarId, PlayerCard, PortalPartnersTarget, RoomSummary, ServerMessage, Vec3 } from '../contracts';
+import type { AvatarId, PlayerCard, RoomSummary, ServerMessage, Vec3 } from '../contracts';
 import { PORTAL_ROOM, type WorldConfig } from './config';
 import { World, type ConnId, type Outgoing } from './world';
 
@@ -14,13 +14,14 @@ export interface TestWorld {
   clear(): void;
 }
 
-export function makeWorld(config?: WorldConfig): TestWorld {
+export function makeWorld(config?: WorldConfig, onModuleError?: (message: string) => void): TestWorld {
   let clock = 0;
   let nextId = 0;
   const world = new World({
     now: () => clock,
     newId: () => `id-${++nextId}`,
     ...(config ? { config } : {}),
+    ...(onModuleError ? { onModuleError } : {}),
   });
   let pending: Outgoing[] = [];
 
@@ -115,7 +116,7 @@ export function interact(
   tw: TestWorld,
   n: number | ConnId,
   sessionId: string,
-  target: PortalPartnersTarget,
+  target: string,
   actionId = `a-${target}-${tw.now()}`,
 ) {
   const c = typeof n === 'number' ? conn(n) : n;

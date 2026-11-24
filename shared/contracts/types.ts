@@ -1,6 +1,5 @@
 import type {
   GameResult,
-  PortalPartnersTarget,
   RoomId,
   RoomSnapshot,
   ServerMessage,
@@ -106,7 +105,7 @@ export interface WorldConnection {
   leaveRoom(): Promise<Result<RoomSnapshot>>;
   setReady(ready: boolean): Promise<Result<null>>;
   /** Fills in the current round's sessionId and a fresh actionId. */
-  interact(target: PortalPartnersTarget): Promise<Result<null>>;
+  interact(target: string): Promise<Result<null>>;
   /** Frees the slot at once; the connection is then closed. Also called by signOut(). */
   leaveWorld(): Promise<Result<null>>;
   /**

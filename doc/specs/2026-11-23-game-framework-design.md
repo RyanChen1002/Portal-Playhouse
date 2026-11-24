@@ -1,14 +1,14 @@
 # Game Framework Design: One Engine, Five Game Modules
 
-**Version:** 0.1
+**Version:** 0.3
 
 **Date:** 11/23/2026
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
-**Status:** Draft for review. The shared results table (§7) is a **proposal for Ryan** that changes FR-09 and contract §7.
+**Status:** Approved by Ryan on 11/23/2026 (framework, generic wire protocol, shared results table).
 
-**Implements:** [initial spec](../initial-spec.md) §8 blocker "server designs for the other four games" (the shared part); prepares FR-06, FR-08, FR-09 and AC-03 to AC-06 for the four remaining games. **Builds on:** [runtime design](2026-11-17-runtime-transport-design.md) (unchanged except where §8 here says so). **Interfaces:** [component contract](../component-contract.md) §3, §5, §7. **Game source:** `frontend/games/rules.js` and the [local playhouse plan](../plans/local-playhouse/README.md).
+**Implements:** [initial spec](../initial-spec.md) §8 blocker "server designs for the other four games" (the shared part); prepares FR-06, FR-08, FR-09 and AC-03 to AC-06 for the four remaining games. **Builds on:** [runtime design](2026-11-17-runtime-transport-design.md) (unchanged except where §7 and §8 here say so). **Interfaces:** [component contract](../component-contract.md) §3, §5, §7. **Game source:** `frontend/games/rules.js` and the [local playhouse plan](../plans/local-playhouse/README.md).
 
 Labels: **Decided** means Adam decided it in brainstorming on 11/23/2026. **Proposal** means a call made while drafting; review of the pull request accepts it. **Proposal for Ryan** means it changes an approved requirement and needs Ryan's explicit agreement.
 
@@ -16,7 +16,7 @@ Labels: **Decided** means Adam decided it in brainstorming on 11/23/2026. **Prop
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.1 | 11/23/2026 | Initial framework design: game modules behind hooks in the existing World engine, with position overrides; Portal Partners moved onto it unchanged; a generic wire protocol keyed by game type; a shared results table proposed for Ryan. |
+| 0.3 | 11/23/2026 | After the final review: the "Builds on" line names §7 and §8; §5.2 tick timing gains a known-limits note (late `advance()` ordering, uncontained hook exceptions). Earlier the same day (0.2): Ryan approved the framework, the generic wire protocol, and the shared results table (§7); §7.5 stays as the record of the fallback not taken, and the three items in §11 are marked approved. Earlier the same day (0.1): initial framework design, with game modules behind hooks in the existing World engine, with position overrides; Portal Partners moved onto it unchanged; a generic wire protocol keyed by game type; a shared results table proposed for Ryan. |
 
 ## 1. Intent
 
@@ -116,6 +116,8 @@ The engine applies overrides before sending anything, so both clients see one co
 
 **Tick timing.** The engine's `advance()` runs on the 100 ms timer in both the Durable Object and the mock, and also after every message, so `tick` may be called at irregular intervals. Modules compute from `now` and their own stored times (for example "train step due at `startedAt` + 25 s + n × 10 s"), never by counting calls. Within one `advance()`, `tick` runs **before** the time-out check (**Proposal**): if a module's own win is due by the same `now` that also reaches `roundMs`, the win counts.
 
+**Known limits.** If `advance()` runs late, `tick` can run before an already-overdue grace or idle deadline in the same pass (a window of about one 100 ms interval). Exceptions thrown by a hook are not yet contained; that is planned before the next game module.
+
 **Interaction rules.** Interactions with a position (a lever, a station) check their own range inside `interact`; the engine no longer checks range. Targets without a position, such as `rotate`, are allowed. A target not in the module's `targets` list gets `VALIDATION_ERROR` from the engine without calling the module (**Proposal**). Duplicate `actionId` handling stays in the engine.
 
 ### 5.3 Portal Partners on the interface
@@ -150,7 +152,7 @@ Based on the practice rules in `frontend/games/rules.js`. Each game's own design
 
 Known stress point: the sofa carry. Overriding the follower's position about 10 times per second works on the server, but how it looks on the follower's screen is a frontend question. Room Rescue's design must settle it, and may propose an extra hook if this one proves insufficient.
 
-## 7. Results: one shared table (**Proposal for Ryan**)
+## 7. Results: one shared table
 
 ### 7.1 Proposal
 
@@ -180,7 +182,7 @@ One migration creates the shared tables and functions, copies existing Portal Pa
 
 Game-specific details such as mistake counts are **not saved** in the first release. A game design that needs a saved detail proposes a column then.
 
-### 7.5 Fallback if Ryan declines
+### 7.5 Fallback (not taken; Ryan approved the shared table)
 
 Keep one table pair and save function per game, and add a single view that combines them for `get_my_results` and `winsTotal`. The engine and runtime do not change: the runtime chooses the save function by `gameType` instead of passing it. Only §7.2 to §7.4 change.
 
@@ -224,11 +226,11 @@ All local and in CI, as in runtime design §10; no hosted resources.
 | Integration | The existing two-account Portal Partners scenarios (win, loss, cancellation, reconnect, `ROOM_LOCKED`) pass unchanged |
 | Manual (Adam, hosted dev) | After applying the migration to hosted dev: existing results still appear in history with the same `winsTotal`; two accounts play one Portal Partners round to a win with the unchanged frontend |
 
-## 11. Open items for Ryan
+## 11. Items for Ryan (all approved 11/23/2026)
 
-1. The shared results table (§7), which changes FR-09 and contract §7. The fallback is §7.5.
-2. The generic wire protocol (§8), including the new `gameType` field and target strings checked by the server.
-3. Each new game's frontend reads its own `game.state` fields; he confirms this shape works for his game views.
+1. Approved: the shared results table (§7), which changes FR-09 and contract §7. The fallback (§7.5) was not taken.
+2. Approved: the generic wire protocol (§8), including the new `gameType` field and target strings checked by the server.
+3. Approved: each new game's frontend reads its own `game.state` fields; he confirmed this shape works for his game views.
 
 ## 12. Left to the builder
 

@@ -250,7 +250,7 @@ function toGameResult(store: MockWorldStore, r: MockResult): GameResult {
   return {
     id: r.id,
     sessionId: round.sessionId,
-    gameType: 'portal-partners',
+    gameType: round.gameType,
     outcome: round.outcome,
     cancelReason: round.cancelReason,
     score: round.score,

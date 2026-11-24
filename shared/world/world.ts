@@ -1,42 +1,40 @@
 import type {
   CancelReason,
   ClientMessage,
+  CorrectionReason,
   ErrorCode,
   GameFinished,
+  GameType,
+  GameStatePayload,
   Outcome,
   PlayerCard,
-  PortalPartnersState,
-  PortalPartnersTarget,
   Presence,
   Result,
   RoomId,
   RoomSnapshot,
   RoomSummary,
+  GameStateBase,
   ServerMessage,
   Vec3,
   WorldSnapshot,
 } from '../contracts';
 import {
-  ARENA_GAP_HALF_Z,
   COURTYARD_SPAWN,
   COURTYARD_SPAWN_ROTATION,
   DEFAULT_WORLD_CONFIG,
   type GameRoomConfig,
-  type Location,
   type WorldConfig,
 } from './config';
-import { checkMove, newTracker, type MoveTracker } from './movement';
+import type { Effect, GameModule, RoundPlayer, RoundView } from './games/types';
 import {
-  arenaBarrier,
-  bridgeOpen,
-  interact,
-  score,
-  setBack,
-  spawnPositions,
-  startRound,
-  timeUp,
-  type PPRound,
-} from './portal-partners';
+  COURTYARD_AREA,
+  checkMove,
+  inBounds,
+  newTracker,
+  type MoveArea,
+  type MoveTracker,
+  type PathCheck,
+} from './movement';
 
 export type ConnId = string;
 export interface Outgoing {
@@ -48,6 +46,7 @@ export interface Closing {
   reason: 'session.replaced' | 'idle' | 'left';
 }
 export interface FinishedRound {
+  gameType: GameType;
   sessionId: string;
   playerIds: [string, string];
   outcome: Outcome;
@@ -60,6 +59,8 @@ export interface WorldOptions {
   now: () => number;
   newId: () => string;
   config?: WorldConfig;
+  /** Reports a game module bug (for example an override outside the arena). Default: ignored. */
+  onModuleError?: (message: string) => void;
 }
 
 type Command = Exclude<ClientMessage, { type: 'auth' | 'auth.refresh' }>;
@@ -78,8 +79,6 @@ interface PlayerState {
   tracker: MoveTracker | null;
   ready: boolean;
   lastFinished: GameFinished | null;
-  /** Last accepted arena position outside the bridge gap; decides the side of a set-back. */
-  lastOutside: Vec3 | null;
   /** Time of the last handled message, for the idle limit. */
   lastActive: number;
   /** While disconnected: when the grace period runs out. */
@@ -97,13 +96,30 @@ interface RoomState {
   sessionId: string | null;
   startedAt: string | null;
   score: number | null;
-  round: PPRound | null;
+  round: Round | null;
   /** When `game.state` was last sent to the round's players. */
   lastStateAt: number;
 }
 
-const STATE_INTERVAL_MS = 1000;
+type ActionReply = { ok: true } | { ok: false; code: ErrorCode; message: string };
 
+/** A running round: the game module, its own state, and the engine's bookkeeping. */
+interface Round {
+  game: GameModule;
+  /** The module's round state; only the module reads or changes it. */
+  state: unknown;
+  sessionId: string;
+  playerIds: [string, string];
+  startedAt: number;
+  /** Replies by actionId, so a repeated action gets the first reply again. */
+  actions: Map<string, ActionReply>;
+  /** The last out-of-range score reported, so a persistent one is reported once. */
+  badScore: number | null;
+  /** The last bad speed reported (not finite or negative), so a persistent one is reported once. */
+  badSpeed: number | null;
+}
+
+const STATE_INTERVAL_MS = 1000;
 /**
  * The platform-free world engine. Callers feed it admitted connections and parsed client
  * messages, then drain the outbox, closings and finished rounds. Time comes only from `now()`.
@@ -112,6 +128,7 @@ export class World {
   private readonly now: () => number;
   private readonly newId: () => string;
   private readonly config: WorldConfig;
+  private readonly onModuleError: (message: string) => void;
   private readonly players = new Map<string, PlayerState>();
   private readonly conns = new Map<ConnId, string>();
   private readonly rooms = new Map<RoomId, RoomState>();
@@ -123,6 +140,7 @@ export class World {
     this.now = opts.now;
     this.newId = opts.newId;
     this.config = opts.config ?? DEFAULT_WORLD_CONFIG;
+    this.onModuleError = opts.onModuleError ?? (() => {});
     this.rooms.set(LOBBY, this.newRoom(LOBBY, null));
     for (const rc of this.config.rooms) this.rooms.set(rc.id, this.newRoom(rc.id, rc));
   }
@@ -147,6 +165,8 @@ export class World {
       this.conns.set(conn, player.id);
       if (restored) this.announceConnection(existing, true);
       this.send(conn, { type: 'world.snapshot', payload: this.worldSnapshot(existing) });
+      // The game hears about the return after the player has their snapshot.
+      if (restored) this.notifyConnection(existing, true);
       // A ready player in grace blocked the start; their return may complete it.
       if (restored) this.maybeStartRound(this.roomOf(existing));
       return { data: null, error: null };
@@ -166,7 +186,6 @@ export class World {
       tracker: newTracker({ ...COURTYARD_SPAWN }, COURTYARD_SPAWN_ROTATION, now),
       ready: false,
       lastFinished: null,
-      lastOutside: null,
       lastActive: now,
       graceUntil: null,
     };
@@ -214,14 +233,20 @@ export class World {
     p.conn = null;
     p.graceUntil = this.now() + this.config.graceMs;
     this.announceConnection(p, false);
+    this.notifyConnection(p, false);
   }
 
   /**
-   * Runs every due deadline (round time-out, grace expiry, idle limit) in time order, so the
+   * Runs each playing round's `tick` first (so a win due by `now` beats the time-out), then
+   * every due deadline (round time-out, grace expiry, idle limit) in time order, so the
    * earliest one decides, then sends the once-per-second `game.state` for running rounds.
    */
   advance(): void {
     const now = this.now();
+    for (const room of this.rooms.values()) {
+      const round = room.round;
+      if (round?.game.tick) this.applyEffect(room, round.game.tick(round.state, this.roundView(round)), 'other');
+    }
     for (let due = this.nextDeadline(now); due; due = this.nextDeadline(now)) due.run();
     for (const room of this.rooms.values()) {
       if (room.round && now - room.lastStateAt >= STATE_INTERVAL_MS) this.sendState(room);
@@ -286,17 +311,22 @@ export class World {
 
   private move(p: PlayerState, m: { sequence: number; position: Vec3; rotation: number }): void {
     const room = this.roomOf(p);
-    const loc = locationOf(room);
-    // Waiting rooms have no positions: there is nothing to move or correct to.
-    if (loc === null || !p.tracker) return;
     const round = room.round;
-    // Every character counts for the plate, including disconnected ones.
-    const positions = this.positions(room);
-    const openBefore = round ? bridgeOpen(round, positions) : false;
-    const barrier = round ? arenaBarrier(round, positions) : undefined;
-    const r = checkMove(p.tracker, loc, m.sequence, m.position, m.rotation, this.now(), barrier);
+    // Waiting rooms have no positions: there is nothing to move or correct to.
+    if (!p.tracker || (room.config && !round)) return;
+    let area: MoveArea = COURTYARD_AREA;
+    let path: PathCheck | undefined;
+    if (round) {
+      // Every character counts for the game, including disconnected ones.
+      const { game, state } = round;
+      const view = this.roundView(round);
+      area = { bounds: arenaBounds(game), speed: this.speedOf(round, view, p.card.id) };
+      path = (f, t) => game.checkMove(state, view, p.card.id, f, t);
+    }
+    const r = checkMove(p.tracker, area, m.sequence, m.position, m.rotation, this.now(), path);
     if (r.kind === 'stale') return;
     p.tracker = r.tracker;
+    if (r.kind === 'ignored') return;
     if (r.kind === 'rejected') {
       if (p.conn !== null) {
         this.send(p.conn, {
@@ -313,7 +343,6 @@ export class World {
     }
     p.position = { ...m.position };
     p.rotation = m.rotation;
-    if (round && Math.abs(m.position.z) >= ARENA_GAP_HALF_Z) p.lastOutside = { ...m.position };
     room.revision++;
     this.toRoom(
       room,
@@ -329,44 +358,43 @@ export class World {
       },
       p.card.id,
     );
-    if (round) this.bridgeCheck(room, round, openBefore);
+    if (round?.game.afterMove) {
+      // The view now holds the mover's new accepted position.
+      this.applyEffect(room, round.game.afterMove(round.state, this.roundView(round), p.card.id), 'afterMove');
+    }
   }
 
   private handleInteract(
     p: PlayerState,
     requestId: string,
-    m: { sessionId: string; actionId: string; target: PortalPartnersTarget },
-  ) {
+    m: { sessionId: string; actionId: string; target: string },
+  ): { code: ErrorCode; message: string } | null {
     const room = this.roomOf(p);
+    // The parser accepts any well-formed target; the room's game decides which ones it knows.
+    if (room.config && !room.config.game.targets.includes(m.target)) {
+      return { code: 'VALIDATION_ERROR', message: 'Interaction target is invalid.' };
+    }
     const round = room.round;
-    if (!round || round.ended || !round.playerIds.includes(p.card.id) || m.sessionId !== round.sessionId) {
-      return { code: 'NOT_IN_GAME' as const, message: 'There is no round in progress for you.' };
+    if (!round || !round.playerIds.includes(p.card.id) || m.sessionId !== round.sessionId) {
+      return { code: 'NOT_IN_GAME', message: 'There is no round in progress for you.' };
     }
-    const positions = new Map<string, Vec3>();
-    const connected = new Map<string, boolean>();
-    for (const member of this.members(room)) {
-      if (member.position) positions.set(member.card.id, member.position);
-      connected.set(member.card.id, member.conn !== null);
-    }
-    const latchedBefore = round.latched;
-    const scoreBefore = score(round);
-    const r = interact(round, p.card.id, m.actionId, m.target, positions, connected);
-    if (!r.ok) return { code: r.code, message: r.message };
+    const prior = round.actions.get(m.actionId);
+    if (prior) return this.replyAction(p, requestId, prior);
 
+    const r = round.game.interact(round.state, this.roundView(round), p.card.id, m.target);
+    const reply: ActionReply = r.ok ? { ok: true } : { ok: false, code: 'INVALID_ACTION', message: r.message };
+    round.actions.set(m.actionId, reply);
+    // The reply goes before anything the action causes.
+    const err = this.replyAction(p, requestId, reply);
+    // Applied even with no effect, so a score change still reaches the board.
+    if (r.ok) this.applyEffect(room, r.effect ?? {}, 'other');
+    return err;
+  }
+
+  /** Sends `request.accepted` for a successful action; returns the error for a failed one. */
+  private replyAction(p: PlayerState, requestId: string, reply: ActionReply): { code: ErrorCode; message: string } | null {
+    if (!reply.ok) return { code: reply.code, message: reply.message };
     this.reply(p, requestId, null);
-    if (r.won) {
-      this.finishRound(room, 'win', null);
-      return null;
-    }
-    const scored = score(round) !== scoreBefore;
-    if (scored || round.latched !== latchedBefore) {
-      room.revision++;
-      this.sendState(room);
-    }
-    if (scored) {
-      room.score = score(round);
-      this.broadcastBoard(room);
-    }
     return null;
   }
 
@@ -467,18 +495,29 @@ export class World {
 
     const now = this.now();
     const sessionId = this.newId();
-    room.round = startRound(sessionId, [a.card.id, b.card.id], now);
+    const game = c.game;
+    const startArea: MoveArea = { bounds: arenaBounds(game), speed: game.arena.speed };
+    [a, b].forEach((m, i) => {
+      const at = game.spawns[i]!;
+      m.position = { ...at };
+      m.tracker = newTracker({ ...at }, m.rotation, now, startArea);
+    });
+    const round: Round = {
+      game,
+      state: undefined,
+      sessionId,
+      playerIds: [a.card.id, b.card.id],
+      startedAt: now,
+      actions: new Map(),
+      badScore: null,
+      badSpeed: null,
+    };
+    round.state = game.start(this.roundView(round));
+    room.round = round;
     room.status = 'playing';
     room.sessionId = sessionId;
     room.startedAt = iso(now);
-    room.score = 0;
-    const spawns = spawnPositions();
-    [a, b].forEach((m, i) => {
-      const at = spawns[i]!;
-      m.position = { ...at };
-      m.tracker = newTracker({ ...at }, m.rotation, now, 'arena');
-      m.lastOutside = { ...at };
-    });
+    room.score = this.scoreOf(round);
     room.revision++;
     const snapshot: ServerMessage = { type: 'room.snapshot', payload: this.roomSnapshot(room) };
     for (const m of [a, b]) if (m.conn !== null) this.send(m.conn, snapshot);
@@ -492,11 +531,10 @@ export class World {
    */
   private finishRound(room: RoomState, outcome: Outcome, cancelReason: CancelReason | null, except?: string): void {
     const round = room.round!;
-    round.ended = true;
     const result: GameFinished = {
       sessionId: round.sessionId,
       outcome,
-      score: score(round),
+      score: this.scoreOf(round),
       persistenceStatus: 'pending',
       ...(cancelReason ? { reason: cancelReason } : {}),
     };
@@ -508,6 +546,7 @@ export class World {
     }
     this.finished.push({
       sessionId: round.sessionId,
+      gameType: room.config!.game.gameType,
       playerIds: [...round.playerIds],
       outcome,
       cancelReason,
@@ -524,7 +563,6 @@ export class World {
     for (const m of this.members(room)) {
       m.position = null;
       m.tracker = null;
-      m.lastOutside = null;
     }
     const cleared = this.resetReady(room);
     room.revision++;
@@ -539,37 +577,129 @@ export class World {
   }
 
   /**
-   * After something that may change the bridge: on open -> closed, every character in the gap
-   * is set back to the side it entered from. Any change sends `game.state`.
+   * The one place a game's effect is applied: overrides first (each a correction to its player
+   * and an update to the others), then the end of the round, then `game.state` and the board.
+   * After a move the move's own revision bump covers the state; otherwise a change bumps it here.
    */
-  private bridgeCheck(room: RoomState, round: PPRound, openBefore: boolean): void {
-    const openNow = bridgeOpen(round, this.positions(room));
-    if (openNow === openBefore) return;
-    if (!openNow) {
-      for (const m of this.members(room)) {
-        if (!m.position || !m.tracker || !m.lastOutside || Math.abs(m.position.z) >= ARENA_GAP_HALF_Z) continue;
-        const to = setBack(m.position, m.lastOutside);
-        m.position = to;
-        m.tracker = { ...m.tracker, position: { ...to } };
-        room.revision++;
-        const sequence = m.tracker.lastSequence;
-        if (m.conn !== null) {
-          this.send(m.conn, {
-            type: 'player.corrected',
-            payload: { sequence, position: { ...to }, rotation: m.rotation, reason: 'bridgeClosed' },
-          });
-        }
-        this.toRoom(
-          room,
-          {
-            type: 'player.updated',
-            payload: { playerId: m.card.id, position: { ...to }, rotation: m.rotation, sequence, revision: room.revision },
-          },
-          m.card.id,
-        );
+  private applyEffect(room: RoomState, effect: Effect, origin: 'afterMove' | 'other'): void {
+    const round = room.round!;
+    const game = round.game;
+    let bumped = false;
+    for (const o of effect.overrides ?? []) {
+      const m = round.playerIds.includes(o.playerId) ? this.players.get(o.playerId) : undefined;
+      if (!m?.position || !m.tracker) {
+        this.onModuleError(`${game.gameType}: override for unknown player ${o.playerId}`);
+        continue;
       }
+      if (!inBounds(arenaBounds(game), o.position)) {
+        this.onModuleError(`${game.gameType}: override for ${o.playerId} is outside the arena`);
+        continue;
+      }
+      if (!game.correctionReasons.includes(o.reason as CorrectionReason)) {
+        this.onModuleError(`${game.gameType}: override for ${o.playerId} has undeclared reason ${o.reason}`);
+        continue;
+      }
+      if (o.rotation !== undefined && !Number.isFinite(o.rotation)) {
+        this.onModuleError(`${game.gameType}: override for ${o.playerId} has a rotation that is not a finite number`);
+        continue;
+      }
+      const to = { ...o.position };
+      m.position = to;
+      if (o.rotation !== undefined) m.rotation = o.rotation;
+      m.tracker = { ...m.tracker, position: { ...to }, rotation: m.rotation };
+      room.revision++;
+      bumped = true;
+      const sequence = m.tracker.lastSequence;
+      if (m.conn !== null) {
+        this.send(m.conn, {
+          type: 'player.corrected',
+          payload: { sequence, position: { ...to }, rotation: m.rotation, reason: o.reason as CorrectionReason },
+        });
+      }
+      this.toRoom(
+        room,
+        {
+          type: 'player.updated',
+          payload: { playerId: m.card.id, position: { ...to }, rotation: m.rotation, sequence, revision: room.revision },
+        },
+        m.card.id,
+      );
     }
-    this.sendState(room);
+    if (effect.end) {
+      this.finishRound(room, effect.end, null);
+      return;
+    }
+    const score = this.scoreOf(round);
+    const scored = score !== room.score;
+    if (effect.stateChanged || scored) {
+      if (origin === 'other' && !bumped) room.revision++;
+      this.sendState(room);
+    }
+    if (scored) {
+      room.score = score;
+      this.broadcastBoard(room);
+    }
+  }
+
+  /** Tells the game a round player disconnected or returned in grace. */
+  private notifyConnection(p: PlayerState, connected: boolean): void {
+    const room = this.roomOf(p);
+    const round = room.round;
+    if (!round?.game.onConnection || !round.playerIds.includes(p.card.id)) return;
+    this.applyEffect(room, round.game.onConnection(round.state, this.roundView(round), p.card.id, connected), 'other');
+  }
+
+  /**
+   * The player's speed from the game, or the arena speed when the game has no `speed` hook or
+   * returns a bad value (not finite or negative: a module bug, reported).
+   */
+  private speedOf(round: Round, view: RoundView, playerId: string): number {
+    const game = round.game;
+    if (!game.speed) return game.arena.speed;
+    const raw = game.speed(round.state, view, playerId);
+    if (Number.isFinite(raw) && raw >= 0) return raw;
+    if (!Object.is(raw, round.badSpeed)) {
+      round.badSpeed = raw;
+      this.onModuleError(`${game.gameType}: speed ${raw} for ${playerId} is not a finite, non-negative number`);
+    }
+    return game.arena.speed;
+  }
+
+  /** The game's score clamped to `0..scoreMax`; an out-of-range score is a module bug, reported. */
+  private scoreOf(round: Round): number {
+    const game = round.game;
+    const raw = game.score(round.state);
+    if (Number.isFinite(raw) && raw >= 0 && raw <= game.scoreMax) return raw;
+    if (!Object.is(raw, round.badScore)) {
+      round.badScore = raw;
+      this.onModuleError(`${game.gameType}: score ${raw} is outside 0..${game.scoreMax}`);
+    }
+    return Number.isFinite(raw) ? Math.min(game.scoreMax, Math.max(0, raw)) : 0;
+  }
+
+  /** A fresh read-only view of the round's two players, in join order. */
+  private roundView(round: Round): RoundView {
+    const players = round.playerIds.map((id): RoundPlayer => {
+      const m = this.players.get(id);
+      // Round players keep a position from start to finish; a missing one is an engine bug.
+      if (!m?.position) throw new Error(`Engine bug: round player ${id} has no position`);
+      return { id, position: { ...m.position }, rotation: m.rotation, connected: m.conn !== null };
+    }) as [RoundPlayer, RoundPlayer];
+    return {
+      players,
+      now: this.now(),
+      startedAt: round.startedAt,
+      player(id) {
+        const found = players.find((x) => x.id === id);
+        if (!found) throw new Error(`Unknown round player: ${id}`);
+        return found;
+      },
+    };
+  }
+
+  /** The round length for a room's game, or the test override when one is set. */
+  private roundMsOf(room: RoomState): number {
+    return this.config.roundMs ?? room.config!.game.roundMs;
   }
 
   private sendState(room: RoomState): void {
@@ -578,7 +708,7 @@ export class World {
     room.lastStateAt = now;
     const message: ServerMessage = {
       type: 'game.state',
-      payload: { sessionId: round.sessionId, revision: room.revision, state: this.gameState(room) },
+      payload: { sessionId: round.sessionId, revision: room.revision, gameType: round.game.gameType, state: this.gameState(room) },
     };
     for (const id of round.playerIds) {
       const m = this.players.get(id);
@@ -597,8 +727,8 @@ export class World {
     };
     for (const room of this.rooms.values()) {
       const round = room.round;
-      if (round && timeUp(round, now, this.config.roundMs)) {
-        consider(round.startedAt + this.config.roundMs, 0, () => this.finishRound(room, 'loss', null));
+      if (round) {
+        consider(round.startedAt + this.roundMsOf(room), 0, () => this.finishRound(room, 'loss', null));
       }
     }
     for (const p of this.players.values()) {
@@ -662,21 +792,12 @@ export class World {
     };
   }
 
-  /** Accepted positions of every character in the room, connected or not. */
-  private positions(room: RoomState): Vec3[] {
-    const out: Vec3[] = [];
-    for (const m of this.members(room)) if (m.position) out.push(m.position);
-    return out;
-  }
-
-  private gameState(room: RoomState): PortalPartnersState {
+  private gameState(room: RoomState): GameStatePayload['state'] {
     const round = room.round!;
     return {
-      bridgeOpen: bridgeOpen(round, this.positions(room)),
-      latched: round.latched,
-      crystals: [round.crystals[0], round.crystals[1]],
+      ...(round.game.view(round.state, this.roundView(round)) as Omit<GameStatePayload['state'], keyof GameStateBase>),
       startedAt: room.startedAt!,
-      durationSeconds: Math.round(this.config.roundMs / 1000),
+      durationSeconds: Math.round(this.roundMsOf(room) / 1000),
       serverTime: iso(this.now()),
     };
   }
@@ -724,15 +845,15 @@ export class World {
     const c = room.config!;
     return {
       id: c.id,
-      name: c.name,
-      gameType: c.gameType,
+      name: c.game.name,
+      gameType: c.game.gameType,
       minPlayers: c.minPlayers,
       maxPlayers: c.maxPlayers,
       status: room.status,
       players: this.members(room).map((m) => ({ ...m.card })),
       sessionId: room.sessionId,
       startedAt: room.startedAt,
-      durationSeconds: Math.round(this.config.roundMs / 1000),
+      durationSeconds: Math.round(this.roundMsOf(room) / 1000),
       score: room.status === 'waiting' ? null : room.score,
       revision: room.revision,
     };
@@ -747,7 +868,7 @@ export class World {
       roomId: room.id,
       summary: room.config ? this.summary(room) : null,
       players: this.members(room).map(presence),
-      session: room.round ? { sessionId: room.round.sessionId, ...this.gameState(room) } : null,
+      session: room.round ? { sessionId: room.round.sessionId, gameType: room.round.game.gameType, ...this.gameState(room) } : null,
       revision: room.revision,
     };
   }
@@ -810,10 +931,8 @@ function presence(p: PlayerState): Presence {
   };
 }
 
-/** Where a room's players move; null when they have no position (a waiting game room). */
-function locationOf(room: RoomState): Location | null {
-  if (!room.config) return 'courtyard';
-  return room.status === 'playing' ? 'arena' : null;
+function arenaBounds(game: GameModule): { halfX: number; halfZ: number } {
+  return { halfX: game.arena.halfX, halfZ: game.arena.halfZ };
 }
 
 function remove(list: string[], id: string): void {
