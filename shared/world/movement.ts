@@ -27,8 +27,6 @@ export interface MoveArea {
 
 export const COURTYARD_AREA: MoveArea = { bounds: { radius: COURTYARD_RADIUS }, speed: COURTYARD_SPEED };
 
-export type Barrier = (from: Vec3, to: Vec3) => boolean; // true = path blocked
-
 export type MoveVerdict = 'allow' | 'reject' | 'ignore';
 export type PathCheck = (from: Vec3, to: Vec3) => MoveVerdict;
 

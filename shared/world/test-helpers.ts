@@ -14,13 +14,14 @@ export interface TestWorld {
   clear(): void;
 }
 
-export function makeWorld(config?: WorldConfig): TestWorld {
+export function makeWorld(config?: WorldConfig, onModuleError?: (message: string) => void): TestWorld {
   let clock = 0;
   let nextId = 0;
   const world = new World({
     now: () => clock,
     newId: () => `id-${++nextId}`,
     ...(config ? { config } : {}),
+    ...(onModuleError ? { onModuleError } : {}),
   });
   let pending: Outgoing[] = [];
 

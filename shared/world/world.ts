@@ -111,6 +111,8 @@ interface Round {
   startedAt: number;
   /** Replies by actionId, so a repeated action gets the first reply again. */
   actions: Map<string, ActionReply>;
+  /** The last out-of-range score reported, so a persistent one is reported once. */
+  badScore: number | null;
 }
 
 const STATE_INTERVAL_MS = 1000;
@@ -159,6 +161,8 @@ export class World {
       this.conns.set(conn, player.id);
       if (restored) this.announceConnection(existing, true);
       this.send(conn, { type: 'world.snapshot', payload: this.worldSnapshot(existing) });
+      // The game hears about the return after the player has their snapshot.
+      if (restored) this.notifyConnection(existing, true);
       // A ready player in grace blocked the start; their return may complete it.
       if (restored) this.maybeStartRound(this.roomOf(existing));
       return { data: null, error: null };
@@ -225,14 +229,20 @@ export class World {
     p.conn = null;
     p.graceUntil = this.now() + this.config.graceMs;
     this.announceConnection(p, false);
+    this.notifyConnection(p, false);
   }
 
   /**
-   * Runs every due deadline (round time-out, grace expiry, idle limit) in time order, so the
+   * Runs each playing round's `tick` first (so a win due by `now` beats the time-out), then
+   * every due deadline (round time-out, grace expiry, idle limit) in time order, so the
    * earliest one decides, then sends the once-per-second `game.state` for running rounds.
    */
   advance(): void {
     const now = this.now();
+    for (const room of this.rooms.values()) {
+      const round = room.round;
+      if (round?.game.tick) this.applyEffect(room, round.game.tick(round.state, this.roundView(round)), 'other');
+    }
     for (let due = this.nextDeadline(now); due; due = this.nextDeadline(now)) due.run();
     for (const room of this.rooms.values()) {
       if (room.round && now - room.lastStateAt >= STATE_INTERVAL_MS) this.sendState(room);
@@ -356,13 +366,13 @@ export class World {
     m: { sessionId: string; actionId: string; target: string },
   ): { code: ErrorCode; message: string } | null {
     const room = this.roomOf(p);
+    // The parser accepts any well-formed target; the room's game decides which ones it knows.
+    if (room.config && !room.config.game.targets.includes(m.target)) {
+      return { code: 'VALIDATION_ERROR', message: 'Interaction target is invalid.' };
+    }
     const round = room.round;
     if (!round || !round.playerIds.includes(p.card.id) || m.sessionId !== round.sessionId) {
       return { code: 'NOT_IN_GAME', message: 'There is no round in progress for you.' };
-    }
-    // The parser accepts any well-formed target; the game decides which ones it knows.
-    if (!round.game.targets.includes(m.target)) {
-      return { code: 'INVALID_ACTION', message: 'Interaction target is invalid.' };
     }
     const prior = round.actions.get(m.actionId);
     if (prior) return this.replyAction(p, requestId, prior);
@@ -372,7 +382,8 @@ export class World {
     round.actions.set(m.actionId, reply);
     // The reply goes before anything the action causes.
     const err = this.replyAction(p, requestId, reply);
-    if (r.ok && r.effect) this.applyEffect(room, r.effect, 'other');
+    // Applied even with no effect, so a score change still reaches the board.
+    if (r.ok) this.applyEffect(room, r.effect ?? {}, 'other');
     return err;
   }
 
@@ -494,13 +505,14 @@ export class World {
       playerIds: [a.card.id, b.card.id],
       startedAt: now,
       actions: new Map(),
+      badScore: null,
     };
     round.state = game.start(this.roundView(round));
     room.round = round;
     room.status = 'playing';
     room.sessionId = sessionId;
     room.startedAt = iso(now);
-    room.score = game.score(round.state);
+    room.score = this.scoreOf(round);
     room.revision++;
     const snapshot: ServerMessage = { type: 'room.snapshot', payload: this.roomSnapshot(room) };
     for (const m of [a, b]) if (m.conn !== null) this.send(m.conn, snapshot);
@@ -517,7 +529,7 @@ export class World {
     const result: GameFinished = {
       sessionId: round.sessionId,
       outcome,
-      score: round.game.score(round.state),
+      score: this.scoreOf(round),
       persistenceStatus: 'pending',
       ...(cancelReason ? { reason: cancelReason } : {}),
     };
@@ -577,6 +589,10 @@ export class World {
         this.onModuleError(`${game.gameType}: override for ${o.playerId} is outside the arena`);
         continue;
       }
+      if (!game.correctionReasons.includes(o.reason as CorrectionReason)) {
+        this.onModuleError(`${game.gameType}: override for ${o.playerId} has undeclared reason ${o.reason}`);
+        continue;
+      }
       const to = { ...o.position };
       m.position = to;
       if (o.rotation !== undefined) m.rotation = o.rotation;
@@ -603,7 +619,7 @@ export class World {
       this.finishRound(room, effect.end, null);
       return;
     }
-    const score = game.score(round.state);
+    const score = this.scoreOf(round);
     const scored = score !== room.score;
     if (effect.stateChanged || scored) {
       if (origin === 'other' && !bumped) room.revision++;
@@ -615,16 +631,33 @@ export class World {
     }
   }
 
+  /** Tells the game a round player disconnected or returned in grace. */
+  private notifyConnection(p: PlayerState, connected: boolean): void {
+    const room = this.roomOf(p);
+    const round = room.round;
+    if (!round?.game.onConnection || !round.playerIds.includes(p.card.id)) return;
+    this.applyEffect(room, round.game.onConnection(round.state, this.roundView(round), p.card.id, connected), 'other');
+  }
+
+  /** The game's score clamped to `0..scoreMax`; an out-of-range score is a module bug, reported. */
+  private scoreOf(round: Round): number {
+    const game = round.game;
+    const raw = game.score(round.state);
+    if (Number.isFinite(raw) && raw >= 0 && raw <= game.scoreMax) return raw;
+    if (!Object.is(raw, round.badScore)) {
+      round.badScore = raw;
+      this.onModuleError(`${game.gameType}: score ${raw} is outside 0..${game.scoreMax}`);
+    }
+    return Number.isFinite(raw) ? Math.min(game.scoreMax, Math.max(0, raw)) : 0;
+  }
+
   /** A fresh read-only view of the round's two players, in join order. */
   private roundView(round: Round): RoundView {
     const players = round.playerIds.map((id): RoundPlayer => {
       const m = this.players.get(id);
-      return {
-        id,
-        position: m?.position ? { ...m.position } : { x: 0, y: 0, z: 0 },
-        rotation: m?.rotation ?? 0,
-        connected: m?.conn != null,
-      };
+      // Round players keep a position from start to finish; a missing one is an engine bug.
+      if (!m?.position) throw new Error(`Engine bug: round player ${id} has no position`);
+      return { id, position: { ...m.position }, rotation: m.rotation, connected: m.conn !== null };
     }) as [RoundPlayer, RoundPlayer];
     return {
       players,
