@@ -1,7 +1,5 @@
 import type { RoomId, Vec3 } from '../contracts';
 
-export type Location = 'courtyard' | 'arena';
-
 export interface GameRoomConfig {
   id: RoomId;
   name: string;

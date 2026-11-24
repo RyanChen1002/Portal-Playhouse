@@ -18,14 +18,23 @@ import type {
 } from '../contracts';
 import {
   ARENA_GAP_HALF_Z,
+  ARENA_HALF_X,
+  ARENA_HALF_Z,
+  ARENA_SPEED,
   COURTYARD_SPAWN,
   COURTYARD_SPAWN_ROTATION,
   DEFAULT_WORLD_CONFIG,
   type GameRoomConfig,
-  type Location,
   type WorldConfig,
 } from './config';
-import { checkMove, newTracker, type MoveTracker } from './movement';
+import {
+  COURTYARD_AREA,
+  checkMove,
+  newTracker,
+  type MoveArea,
+  type MoveTracker,
+  type PathCheck,
+} from './movement';
 import {
   arenaBarrier,
   bridgeOpen,
@@ -286,17 +295,21 @@ export class World {
 
   private move(p: PlayerState, m: { sequence: number; position: Vec3; rotation: number }): void {
     const room = this.roomOf(p);
-    const loc = locationOf(room);
+    const area = areaOf(room);
     // Waiting rooms have no positions: there is nothing to move or correct to.
-    if (loc === null || !p.tracker) return;
+    if (area === null || !p.tracker) return;
     const round = room.round;
     // Every character counts for the plate, including disconnected ones.
     const positions = this.positions(room);
     const openBefore = round ? bridgeOpen(round, positions) : false;
     const barrier = round ? arenaBarrier(round, positions) : undefined;
-    const r = checkMove(p.tracker, loc, m.sequence, m.position, m.rotation, this.now(), barrier);
+    const path: PathCheck | undefined = barrier
+      ? (f, t) => (barrier(f, t) ? 'reject' : 'allow')
+      : undefined;
+    const r = checkMove(p.tracker, area, m.sequence, m.position, m.rotation, this.now(), path);
     if (r.kind === 'stale') return;
     p.tracker = r.tracker;
+    if (r.kind === 'ignored') return;
     if (r.kind === 'rejected') {
       if (p.conn !== null) {
         this.send(p.conn, {
@@ -480,7 +493,7 @@ export class World {
     [a, b].forEach((m, i) => {
       const at = spawns[i]!;
       m.position = { ...at };
-      m.tracker = newTracker({ ...at }, m.rotation, now, 'arena');
+      m.tracker = newTracker({ ...at }, m.rotation, now, PORTAL_PARTNERS_AREA);
       m.lastOutside = { ...at };
     });
     room.revision++;
@@ -814,10 +827,16 @@ function presence(p: PlayerState): Presence {
   };
 }
 
+// Interim: the Portal Partners arena from config until its module owns it.
+const PORTAL_PARTNERS_AREA: MoveArea = {
+  bounds: { halfX: ARENA_HALF_X, halfZ: ARENA_HALF_Z },
+  speed: ARENA_SPEED,
+};
+
 /** Where a room's players move; null when they have no position (a waiting game room). */
-function locationOf(room: RoomState): Location | null {
-  if (!room.config) return 'courtyard';
-  return room.status === 'playing' ? 'arena' : null;
+function areaOf(room: RoomState): MoveArea | null {
+  if (!room.config) return COURTYARD_AREA;
+  return room.status === 'playing' ? PORTAL_PARTNERS_AREA : null;
 }
 
 function remove(list: string[], id: string): void {
