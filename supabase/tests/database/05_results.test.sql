@@ -1,9 +1,10 @@
--- Task 7: Portal Partners results tables, runtime functions, winsTotal and get_my_results.
+-- Shared game results tables (game_types, game_results, game_result_participants), runtime
+-- functions, winsTotal and get_my_results. Portal Partners is the first game type.
 -- Errors are pinned as sqlstate:message via the test-local pg_temp.err helper.
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(59);
+select plan(70);
 
 create function pg_temp.err(sql text)
 returns text
@@ -21,45 +22,55 @@ exception when others then
 end;
 $$;
 
--- Users: A, B, C play; D has no results; X has a profile but is never a participant.
+-- Users: A, B, C play Portal Partners; D has no results; E and F play two game types.
 insert into auth.users (id, email, raw_user_meta_data) values
   ('00000000-0000-0000-0000-0000000000e1', 'e1@example.test', '{"display_name":"Ann"}'),
   ('00000000-0000-0000-0000-0000000000e2', 'e2@example.test', '{"display_name":"Bob"}'),
   ('00000000-0000-0000-0000-0000000000e3', 'e3@example.test', '{"display_name":"Cat"}'),
-  ('00000000-0000-0000-0000-0000000000e4', 'e4@example.test', '{"display_name":"Dan"}');
+  ('00000000-0000-0000-0000-0000000000e4', 'e4@example.test', '{"display_name":"Dan"}'),
+  ('00000000-0000-0000-0000-0000000000e5', 'e5@example.test', '{"display_name":"Eve"}'),
+  ('00000000-0000-0000-0000-0000000000e6', 'e6@example.test', '{"display_name":"Fay"}');
 
 -- ---------------------------------------------------------------------------
 -- Privileges and shape
 -- ---------------------------------------------------------------------------
-select has_table('private', 'portal_partners_results', 'results table exists');
-select has_table('private', 'portal_partners_participants', 'participants table exists');
+select has_table('private', 'game_types', 'game types table exists');
+select has_table('private', 'game_results', 'results table exists');
+select has_table('private', 'game_result_participants', 'participants table exists');
+select hasnt_table('private', 'portal_partners_results', 'old Portal Partners objects are gone: results table');
+select hasnt_table('private', 'portal_partners_participants', 'old Portal Partners objects are gone: participants table');
+select hasnt_function('public', 'record_portal_partners_result', 'old Portal Partners objects are gone: save function');
 select has_function('public', 'get_runtime_profile', array['uuid'], 'get_runtime_profile exists');
-select has_function('public', 'record_portal_partners_result',
-  array['uuid', 'uuid[]', 'text', 'text', 'integer', 'timestamp with time zone', 'timestamp with time zone'],
-  'record_portal_partners_result exists');
+select has_function('public', 'record_game_result',
+  array['text', 'uuid', 'uuid[]', 'text', 'text', 'integer', 'timestamp with time zone', 'timestamp with time zone'],
+  'record_game_result exists');
 select has_function('public', 'get_my_results', array['integer', 'text'], 'get_my_results exists');
 
-select ok((select relrowsecurity from pg_class where oid = 'private.portal_partners_results'::regclass),
+select ok((select relrowsecurity from pg_class where oid = 'private.game_types'::regclass),
+  'RLS is enabled on game types');
+select ok((select relrowsecurity from pg_class where oid = 'private.game_results'::regclass),
   'RLS is enabled on results');
-select ok((select relrowsecurity from pg_class where oid = 'private.portal_partners_participants'::regclass),
+select ok((select relrowsecurity from pg_class where oid = 'private.game_result_participants'::regclass),
   'RLS is enabled on participants');
-select ok(not has_table_privilege('anon', 'private.portal_partners_results', 'select'), 'anon cannot select results');
-select ok(not has_table_privilege('authenticated', 'private.portal_partners_results', 'select'), 'authenticated cannot select results');
-select ok(not has_table_privilege('anon', 'private.portal_partners_participants', 'select'), 'anon cannot select participants');
-select ok(not has_table_privilege('authenticated', 'private.portal_partners_participants', 'select'), 'authenticated cannot select participants');
+select ok(not has_table_privilege('anon', 'private.game_types', 'select'), 'game_types is not readable by anon');
+select ok(not has_table_privilege('authenticated', 'private.game_types', 'select'), 'game_types is not readable by authenticated');
+select ok(not has_table_privilege('anon', 'private.game_results', 'select'), 'anon cannot select results');
+select ok(not has_table_privilege('authenticated', 'private.game_results', 'select'), 'authenticated cannot select results');
+select ok(not has_table_privilege('anon', 'private.game_result_participants', 'select'), 'anon cannot select participants');
+select ok(not has_table_privilege('authenticated', 'private.game_result_participants', 'select'), 'authenticated cannot select participants');
 
 select ok(not has_function_privilege('anon', 'public.get_runtime_profile(uuid)', 'execute'), 'anon cannot execute get_runtime_profile');
 select ok(not has_function_privilege('authenticated', 'public.get_runtime_profile(uuid)', 'execute'), 'authenticated cannot execute get_runtime_profile');
 select ok(has_function_privilege('service_role', 'public.get_runtime_profile(uuid)', 'execute'), 'service_role can execute get_runtime_profile');
 select ok(not has_function_privilege('anon',
-  'public.record_portal_partners_result(uuid, uuid[], text, text, integer, timestamptz, timestamptz)', 'execute'),
-  'anon cannot execute record_portal_partners_result');
+  'public.record_game_result(text, uuid, uuid[], text, text, integer, timestamptz, timestamptz)', 'execute'),
+  'anon cannot execute record_game_result');
 select ok(not has_function_privilege('authenticated',
-  'public.record_portal_partners_result(uuid, uuid[], text, text, integer, timestamptz, timestamptz)', 'execute'),
-  'authenticated cannot execute record_portal_partners_result');
+  'public.record_game_result(text, uuid, uuid[], text, text, integer, timestamptz, timestamptz)', 'execute'),
+  'authenticated cannot execute record_game_result');
 select ok(has_function_privilege('service_role',
-  'public.record_portal_partners_result(uuid, uuid[], text, text, integer, timestamptz, timestamptz)', 'execute'),
-  'service_role can execute record_portal_partners_result');
+  'public.record_game_result(text, uuid, uuid[], text, text, integer, timestamptz, timestamptz)', 'execute'),
+  'service_role can execute record_game_result');
 select ok(has_function_privilege('authenticated', 'public.get_my_results(integer, text)', 'execute'), 'authenticated can execute get_my_results');
 select ok(not has_function_privilege('anon', 'public.get_my_results(integer, text)', 'execute'), 'anon cannot execute get_my_results');
 select ok(not exists (select 1 from pg_proc p, aclexplode(p.proacl) a
@@ -80,16 +91,16 @@ select is(pg_temp.err($$select public.get_runtime_profile('00000000-0000-0000-00
   'PT503:SERVICE_UNAVAILABLE', 'get_runtime_profile: unknown id is PT503');
 
 -- ---------------------------------------------------------------------------
--- record_portal_partners_result: idempotency
+-- record_game_result: idempotency
 -- ---------------------------------------------------------------------------
 create temp table rec (n int, resp jsonb);
 grant all on rec to service_role;
 
-insert into rec select 1, public.record_portal_partners_result(
+insert into rec select 1, public.record_game_result('portal-partners',
   '00000000-0000-0000-0000-00000000a001',
   array['00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000e1']::uuid[],
   'win', null, 2, '2026-11-17T10:00:00Z', '2026-11-17T10:03:20.500Z');
-insert into rec select 2, public.record_portal_partners_result(
+insert into rec select 2, public.record_game_result('portal-partners',
   '00000000-0000-0000-0000-00000000a001',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[],
   'win', null, 2, '2026-11-17T10:00:00Z', '2026-11-17T10:03:20.500Z');
@@ -97,53 +108,56 @@ insert into rec select 2, public.record_portal_partners_result(
 select ok((select resp ? 'resultId' and (select count(*) from jsonb_object_keys(resp)) = 1 from rec where n = 1),
   'first call returns {resultId}');
 select is((select resp from rec where n = 2), (select resp from rec where n = 1), 'replay returns the same resultId');
-select is((select count(*) from private.portal_partners_results where session_id = '00000000-0000-0000-0000-00000000a001'),
+select is((select count(*) from private.game_results where session_id = '00000000-0000-0000-0000-00000000a001'),
   1::bigint, 'replay leaves one result row');
-select is((select count(*) from private.portal_partners_participants), 2::bigint, 'replay leaves two participant rows');
+select is((select count(*) from private.game_result_participants), 2::bigint, 'replay leaves two participant rows');
 
 -- ---------------------------------------------------------------------------
--- record_portal_partners_result: validation
+-- record_game_result: validation
 -- ---------------------------------------------------------------------------
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b001',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b001',
   array['00000000-0000-0000-0000-0000000000e1']::uuid[], 'win', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'one player is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b002',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b002',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e1']::uuid[], 'win', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'the same player twice is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b003',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b003',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-00000000ffff']::uuid[], 'win', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'an unknown player is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b004',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b004',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'draw', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'outcome draw is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b005',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b005',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'cancelled', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'cancelled without a reason is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b006',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b006',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'win', 'left', 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'a win with a reason is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b007',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b007',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'win', null, 3, now(), now())$$),
-  'PT400:VALIDATION_ERROR', 'score 3 is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b008',
+  'PT400:VALIDATION_ERROR', 'score above the game''s maximum is rejected');
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b008',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'win', null, 1,
   '2026-11-17T10:00:01Z', '2026-11-17T10:00:00Z')$$),
   'PT400:VALIDATION_ERROR', 'completion before start is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result('00000000-0000-0000-0000-00000000b009',
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000b009',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'cancelled', 'quit', 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'an unknown cancel reason is rejected');
-select is(pg_temp.err($$select public.record_portal_partners_result(null,
+select is(pg_temp.err($$select public.record_game_result('portal-partners', null,
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'win', null, 1, now(), now())$$),
   'PT400:VALIDATION_ERROR', 'a null session id is rejected');
-select is((select count(*) from private.portal_partners_results), 1::bigint, 'rejected calls wrote nothing');
+select is(pg_temp.err($$select public.record_game_result('no-such-game', '00000000-0000-0000-0000-00000000b010',
+  array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[], 'win', null, 1, now(), now())$$),
+  'PT400:VALIDATION_ERROR', 'unknown game type is rejected');
+select is((select count(*) from private.game_results), 1::bigint, 'rejected calls wrote nothing');
 
 -- The table's own check also rejects a NULL reason on a cancellation and a reason on a win.
 reset role;
-select throws_ok($$insert into private.portal_partners_results (session_id, outcome, cancel_reason, score, started_at, completed_at)
-  values ('00000000-0000-0000-0000-00000000c001', 'cancelled', null, 0, now(), now())$$,
+select throws_ok($$insert into private.game_results (game_type, session_id, outcome, cancel_reason, score, started_at, completed_at)
+  values ('portal-partners', '00000000-0000-0000-0000-00000000c001', 'cancelled', null, 0, now(), now())$$,
   '23514', null, 'table check: cancelled with a NULL reason is rejected');
-select throws_ok($$insert into private.portal_partners_results (session_id, outcome, cancel_reason, score, started_at, completed_at)
-  values ('00000000-0000-0000-0000-00000000c002', 'win', 'left', 0, now(), now())$$,
+select throws_ok($$insert into private.game_results (game_type, session_id, outcome, cancel_reason, score, started_at, completed_at)
+  values ('portal-partners', '00000000-0000-0000-0000-00000000c002', 'win', 'left', 0, now(), now())$$,
   '23514', null, 'table check: a win with a reason is rejected');
 set local role service_role;
 
@@ -151,16 +165,16 @@ set local role service_role;
 -- winsTotal: A+B win twice (a001, a002), lose once (a003), cancel once (a004).
 -- B+C: one win (a005). D has nothing.
 -- ---------------------------------------------------------------------------
-select public.record_portal_partners_result('00000000-0000-0000-0000-00000000a002',
+select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000a002',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[],
   'win', null, 2, '2026-11-17T11:00:00Z', '2026-11-17T11:01:00Z');
-select public.record_portal_partners_result('00000000-0000-0000-0000-00000000a003',
+select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000a003',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[],
   'loss', null, 1, '2026-11-17T12:00:00Z', '2026-11-17T12:02:00Z');
-select public.record_portal_partners_result('00000000-0000-0000-0000-00000000a004',
+select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000a004',
   array['00000000-0000-0000-0000-0000000000e1', '00000000-0000-0000-0000-0000000000e2']::uuid[],
   'cancelled', 'disconnected', 0, '2026-11-17T13:00:00Z', '2026-11-17T13:00:30Z');
-select public.record_portal_partners_result('00000000-0000-0000-0000-00000000a005',
+select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000a005',
   array['00000000-0000-0000-0000-0000000000e2', '00000000-0000-0000-0000-0000000000e3']::uuid[],
   'win', null, 2, '2026-11-17T14:00:00Z', '2026-11-17T14:01:00Z');
 
@@ -220,8 +234,33 @@ select is(pg_temp.err($$select public.get_my_results(10, 'not-a-cursor')$$), 'PT
 
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select is(pg_temp.err($$select public.get_my_results()$$), 'PT401:UNAUTHORIZED', 'signed-out caller is PT401');
-select is(pg_temp.err($$select * from private.portal_partners_results$$), '42501:permission denied for schema private',
+select is(pg_temp.err($$select * from private.game_results$$), '42501:permission denied for schema private',
   'authenticated cannot read results directly');
+
+-- ---------------------------------------------------------------------------
+-- More than one game type: a test-only game type with its own score range.
+-- ---------------------------------------------------------------------------
+reset role;
+insert into private.game_types (game_type, score_max) values ('test-game', 6);
+set local role service_role;
+
+select ok(public.record_game_result('test-game', '00000000-0000-0000-0000-00000000d001',
+  array['00000000-0000-0000-0000-0000000000e5', '00000000-0000-0000-0000-0000000000e6']::uuid[],
+  'win', null, 6, '2026-11-18T10:00:00Z', '2026-11-18T10:01:00Z') ? 'resultId',
+  'a test game type allows its own range');
+select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000d002',
+  array['00000000-0000-0000-0000-0000000000e5', '00000000-0000-0000-0000-0000000000e6']::uuid[],
+  'win', null, 2, '2026-11-18T11:00:00Z', '2026-11-18T11:01:00Z');
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-0000000000e5","role":"authenticated"}', true);
+select is((select jsonb_agg(jsonb_build_array(r ->> 'sessionId', r ->> 'gameType', r ->> 'score'))
+           from jsonb_array_elements(public.get_my_results() -> 'results') r),
+  '[["00000000-0000-0000-0000-00000000d002","portal-partners","2"],["00000000-0000-0000-0000-00000000d001","test-game","6"]]'::jsonb,
+  'history and wins cover more than one game type: history has both with their gameType');
+select is(public.get_me() ->> 'winsTotal', '2',
+  'history and wins cover more than one game type: winsTotal is 2');
 
 select * from finish();
 rollback;
