@@ -47,6 +47,27 @@ describe('game module hooks', () => {
     expect(only(tw.messagesFor(conn(2)), 'player.updated').map((m) => m.payload.position)).toEqual([{ x: 0.4, y: 0, z: 0 }]);
   });
 
+  it('a bad speed falls back to the arena speed and is reported', () => {
+    const { tw, state, errors } = testWorld();
+    state.speed = NaN;
+    tw.advanceBy(100);
+    const s1 = move(tw, 1, { x: 4, y: 0, z: 0 }); // 5 units: over arena.speed + 0.5
+    expect(only(tw.messagesFor(conn(1)), 'player.corrected')).toEqual([
+      { type: 'player.corrected', payload: { sequence: s1, position: SPAWN_1, rotation: 0, reason: 'rejected' } },
+    ]);
+    tw.advanceBy(100);
+    move(tw, 1, { x: 4, y: 0, z: 0.1 }); // still NaN, over 4.5 units: rejected again, reported only once
+    expect(only(tw.messagesFor(conn(1)), 'player.corrected').map((m) => m.payload.reason)).toEqual(['rejected']);
+    expect(errors).toHaveLength(1);
+
+    state.speed = 2;
+    tw.advanceBy(100);
+    move(tw, 1, { x: -0.6, y: 0, z: 0 });
+    expect(tw.messagesFor(conn(1))).toEqual([]);
+    expect(only(tw.messagesFor(conn(2)), 'player.updated').map((m) => m.payload.position)).toEqual([{ x: -0.6, y: 0, z: 0 }]);
+    expect(errors).toHaveLength(1);
+  });
+
   it('afterMove override moves the partner', () => {
     const { tw, state } = testWorld();
     tw.advanceBy(100);

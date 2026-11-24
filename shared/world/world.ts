@@ -113,6 +113,8 @@ interface Round {
   actions: Map<string, ActionReply>;
   /** The last out-of-range score reported, so a persistent one is reported once. */
   badScore: number | null;
+  /** The last bad speed reported (not finite or negative), so a persistent one is reported once. */
+  badSpeed: number | null;
 }
 
 const STATE_INTERVAL_MS = 1000;
@@ -316,7 +318,7 @@ export class World {
       // Every character counts for the game, including disconnected ones.
       const { game, state } = round;
       const view = this.roundView(round);
-      area = { bounds: arenaBounds(game), speed: game.speed?.(state, view, p.card.id) ?? game.arena.speed };
+      area = { bounds: arenaBounds(game), speed: this.speedOf(round, view, p.card.id) };
       path = (f, t) => game.checkMove(state, view, p.card.id, f, t);
     }
     const r = checkMove(p.tracker, area, m.sequence, m.position, m.rotation, this.now(), path);
@@ -506,6 +508,7 @@ export class World {
       startedAt: now,
       actions: new Map(),
       badScore: null,
+      badSpeed: null,
     };
     round.state = game.start(this.roundView(round));
     room.round = round;
@@ -637,6 +640,22 @@ export class World {
     const round = room.round;
     if (!round?.game.onConnection || !round.playerIds.includes(p.card.id)) return;
     this.applyEffect(room, round.game.onConnection(round.state, this.roundView(round), p.card.id, connected), 'other');
+  }
+
+  /**
+   * The player's speed from the game, or the arena speed when the game has no `speed` hook or
+   * returns a bad value (not finite or negative: a module bug, reported).
+   */
+  private speedOf(round: Round, view: RoundView, playerId: string): number {
+    const game = round.game;
+    if (!game.speed) return game.arena.speed;
+    const raw = game.speed(round.state, view, playerId);
+    if (Number.isFinite(raw) && raw >= 0) return raw;
+    if (!Object.is(raw, round.badSpeed)) {
+      round.badSpeed = raw;
+      this.onModuleError(`${game.gameType}: speed ${raw} for ${playerId} is not a finite, non-negative number`);
+    }
+    return game.arena.speed;
   }
 
   /** The game's score clamped to `0..scoreMax`; an out-of-range score is a module bug, reported. */
