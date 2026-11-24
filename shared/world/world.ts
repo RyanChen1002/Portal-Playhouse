@@ -4,6 +4,7 @@ import type {
   CorrectionReason,
   ErrorCode,
   GameFinished,
+  GameType,
   GameStatePayload,
   Outcome,
   PlayerCard,
@@ -45,6 +46,7 @@ export interface Closing {
   reason: 'session.replaced' | 'idle' | 'left';
 }
 export interface FinishedRound {
+  gameType: GameType;
   sessionId: string;
   playerIds: [string, string];
   outcome: Outcome;
@@ -544,6 +546,7 @@ export class World {
     }
     this.finished.push({
       sessionId: round.sessionId,
+      gameType: room.config!.game.gameType,
       playerIds: [...round.playerIds],
       outcome,
       cancelReason,

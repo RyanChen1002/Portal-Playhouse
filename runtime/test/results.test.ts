@@ -256,6 +256,34 @@ describe('result saving', () => {
     expect(await alarmAt(stub)).toBeNull();
   });
 
+  it('pending row without gameType saves as portal-partners', async () => {
+    const stub = freshWorld();
+    const clock = await fakeClock(stub);
+    const sessionId = crypto.randomUUID();
+    const legacy = {
+      sessionId,
+      playerIds: [crypto.randomUUID(), crypto.randomUUID()],
+      outcome: 'cancelled',
+      cancelReason: 'left',
+      score: 0,
+      startedAt: '2026-11-17T12:00:00.000Z',
+      completedAt: '2026-11-17T12:01:00.000Z',
+    };
+    await runInDurableObject(stub, async (_i: WorldObject, state) => {
+      state.storage.sql.exec(
+        'INSERT INTO pending_results (session_id, round, next_attempt_at) VALUES (?, ?, ?)',
+        sessionId,
+        JSON.stringify(legacy),
+        clock.t - 1,
+      );
+      await state.storage.setAlarm(Date.now() + 1_000);
+    });
+    expect(await runDurableObjectAlarm(stub)).toBe(true);
+    expect(fake.recordCalls()).toHaveLength(1);
+    expect(fake.recordCalls()[0]).toMatchObject({ game_type: 'portal-partners', session_id: sessionId });
+    expect(await rows(stub)).toEqual([]);
+  });
+
   it('a lost response then a retry gives one saved result and one result.saved', async () => {
     const stub = freshWorld();
     const clock = await fakeClock(stub);
@@ -317,7 +345,7 @@ describe('result saving', () => {
     expect(await runDurableObjectAlarm(stub)).toBe(true);
     const saved = await sb.next('result.saved');
     expect(saved.type === 'result.saved' && saved.payload.sessionId).toBe(sessionId);
-    const keys = fake.rpcCalls.filter((c) => c.url.endsWith('/record_portal_partners_result')).map((c) => c.headers.get('apikey'));
+    const keys = fake.rpcCalls.filter((c) => c.url.endsWith('/record_game_result')).map((c) => c.headers.get('apikey'));
     expect(keys).toHaveLength(2);
     expect(keys[0]).not.toBe(SECRET_KEY);
     expect(keys[1]).toBe(SECRET_KEY);

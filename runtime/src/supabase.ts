@@ -66,7 +66,8 @@ export function createSupabaseServer(opts: SupabaseServerOptions): SupabaseServe
     },
 
     async recordResult(round) {
-      const r = await rpc('record_portal_partners_result', {
+      const r = await rpc('record_game_result', {
+        game_type: round.gameType,
         session_id: round.sessionId,
         player_ids: round.playerIds,
         outcome: round.outcome,

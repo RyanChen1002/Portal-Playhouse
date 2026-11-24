@@ -16,6 +16,7 @@ function stub(respond: (req: Request) => Response | Promise<Response>) {
 }
 
 const round: FinishedRound = {
+  gameType: 'portal-partners',
   sessionId: '11111111-1111-4111-8111-111111111111',
   playerIds: [PLAYER, '22222222-2222-4222-8222-222222222222'],
   outcome: 'cancelled',
@@ -60,9 +61,10 @@ describe('recordResult', () => {
     const { calls, server } = stub(() => Response.json({ resultId: 'abc' }));
     expect(await server.recordResult(round)).toEqual({ data: { resultId: 'abc' }, error: null });
     const req = calls[0]!;
-    expect(req.url).toBe(`${URL_BASE}/rest/v1/rpc/record_portal_partners_result`);
+    expect(req.url).toBe(`${URL_BASE}/rest/v1/rpc/record_game_result`);
     expect(req.headers.get('apikey')).toBe('sb_secret_test');
     expect(await req.json()).toEqual({
+      game_type: 'portal-partners',
       session_id: round.sessionId,
       player_ids: round.playerIds,
       outcome: 'cancelled',

@@ -257,6 +257,7 @@ describe('World rounds', () => {
     expect(tw.world.takeFinishedRounds()).toEqual([
       {
         sessionId: sid,
+        gameType: 'portal-partners',
         playerIds: ['p1', 'p2'],
         outcome: 'win',
         cancelReason: null,
@@ -307,6 +308,7 @@ describe('World rounds', () => {
     expect(tw.world.takeFinishedRounds()).toEqual([
       {
         sessionId: sid,
+        gameType: 'portal-partners',
         playerIds: ['p1', 'p2'],
         outcome: 'loss',
         cancelReason: null,
@@ -543,6 +545,7 @@ describe('World rounds', () => {
       expect(rounds).toEqual([
         {
           sessionId: sid,
+          gameType: 'portal-partners',
           playerIds: ['p1', 'p2'],
           outcome: 'loss',
           cancelReason: null,
@@ -569,6 +572,7 @@ describe('World rounds', () => {
     expect(tw.world.takeFinishedRounds()).toEqual([
       {
         sessionId: sid,
+        gameType: 'portal-partners',
         playerIds: ['p1', 'p2'],
         outcome: 'cancelled',
         cancelReason: 'disconnected',
