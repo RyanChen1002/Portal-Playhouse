@@ -66,7 +66,7 @@ export const PORTAL_PARTNERS: GameModule<PPState, PPView> = {
   spawns: ARENA_SPAWNS,
   scoreMax: 2,
   targets: ['lever', 'crystal-a', 'crystal-b', 'exit'],
-  correctionReasons: ['rejected', 'bridgeClosed'],
+  correctionReasons: ['bridgeClosed'],
   disconnect: { duringGrace: 'keepRunning', onExpiry: 'cancel' },
 
   start(view) {

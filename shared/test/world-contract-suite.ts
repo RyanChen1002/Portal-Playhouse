@@ -16,15 +16,8 @@ import type {
   Vec3,
   WorldConnection,
 } from '../contracts/index';
-import {
-  ARENA_SPAWNS,
-  COURTYARD_SPAWN,
-  CRYSTAL_A,
-  CRYSTAL_B,
-  LEVER,
-  PLATE,
-  PORTAL_ROOM,
-} from '../world/config';
+import { COURTYARD_SPAWN, PORTAL_ROOM } from '../world/config';
+import { ARENA_SPAWNS, CRYSTAL_A, CRYSTAL_B, LEVER, PLATE } from '../world/games/portal-partners';
 
 export interface WorldContractFactory {
   /** A fresh client, signed in to a new account that has never played. */

@@ -58,7 +58,9 @@ describe('Portal Partners module', () => {
     expect(s.latched).toBe(false);
     expect(M.interact(s, viewOf(v(2, -2.2), far), 'a', 'lever')).toEqual({ ok: true, effect: { stateChanged: true } });
     expect(s.latched).toBe(true);
+    expect(s.open).toBe(true);
     expect(M.view(s, viewOf(far, far)).bridgeOpen).toBe(true);
+    expect(M.afterMove!(s, viewOf(far, far), 'a')).toEqual({});
     expect(M.interact(s, viewOf(v(2, -2.2), far), 'a', 'lever')).toEqual({
       ok: false,
       message: 'The lever is already pulled.',

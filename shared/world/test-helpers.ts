@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import type { AvatarId, PlayerCard, PortalPartnersTarget, RoomSummary, ServerMessage, Vec3 } from '../contracts';
+import type { AvatarId, PlayerCard, RoomSummary, ServerMessage, Vec3 } from '../contracts';
 import { PORTAL_ROOM, type WorldConfig } from './config';
 import { World, type ConnId, type Outgoing } from './world';
 
@@ -115,7 +115,7 @@ export function interact(
   tw: TestWorld,
   n: number | ConnId,
   sessionId: string,
-  target: PortalPartnersTarget,
+  target: string,
   actionId = `a-${target}-${tw.now()}`,
 ) {
   const c = typeof n === 'number' ? conn(n) : n;

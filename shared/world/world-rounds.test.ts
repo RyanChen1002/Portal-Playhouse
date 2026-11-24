@@ -336,6 +336,34 @@ describe('World rounds', () => {
     expect(finishedFor(tw, 1)).toEqual([{ sessionId: sid, outcome: 'loss', score: 2, persistenceStatus: 'pending' }]);
   });
 
+  it('duplicate actionId replays the first reply', () => {
+    const { tw, sid } = startGame();
+    interact(tw, 1, sid, 'crystal-a', 'dup');
+    const first = lastReply(tw.messagesFor(conn(1)));
+    expect(first).toEqual({
+      type: 'request.error',
+      requestId: 'i-dup',
+      error: { code: 'INVALID_ACTION', message: 'Move closer to interact.' },
+    });
+
+    walk(tw, 1, SPAWN1, ON_PLATE);
+    walk(tw, 2, SPAWN2, v(0, -4));
+    walk(tw, 2, v(0, -4), v(1.5, -4));
+    interact(tw, 2, sid, 'lever');
+    walk(tw, 1, ON_PLATE, v(0, 2));
+    walk(tw, 1, v(0, 2), v(0, -2));
+    walk(tw, 1, v(0, -2), v(-6, -5));
+    for (const n of [1, 2]) expect(only(tw.messagesFor(conn(n)), 'player.corrected')).toEqual([]);
+
+    interact(tw, 1, sid, 'crystal-a', 'dup');
+    expect(lastReply(tw.messagesFor(conn(1)))).toEqual(first);
+    tw.advanceBy(1000);
+    tw.world.advance();
+    const states = only(tw.messagesFor(conn(1)), 'game.state');
+    expect(states.length).toBeGreaterThan(0);
+    expect(states[states.length - 1]!.payload.state.crystals).toEqual([false, false]);
+  });
+
   it('bridge closes under a player', () => {
     for (const disconnected of [false, true]) {
       const { tw, sid } = startGame();
