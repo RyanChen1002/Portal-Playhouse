@@ -123,6 +123,7 @@ export class WorldObject extends DurableObject<Env> {
     this.world = new World({
       now: () => Date.now(),
       newId: () => crypto.randomUUID(),
+      onModuleError: (message) => logModuleError(message),
       ...(testVars.roundMs !== null ? { config: { ...DEFAULT_WORLD_CONFIG, roundMs: testVars.roundMs } } : {}),
     });
     this.resultSaveFailures = testVars.resultSaveFailures;
@@ -546,6 +547,11 @@ function requestIdOf(raw: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** A game module bug the engine contained. The message holds only game type, player id and numbers. */
+function logModuleError(message: string): void {
+  console.warn(JSON.stringify({ event: 'module.error', message }));
 }
 
 /** Logs only the player id and the error code; never tokens or payloads. */

@@ -143,6 +143,16 @@ describe('game module hooks', () => {
     expect(tw.messagesFor(conn(2))).toEqual([]);
   });
 
+  it('an override with a non-finite rotation is skipped and reported', () => {
+    const { tw, state, errors } = testWorld();
+    state.nextTick = { overrides: [{ playerId: 'p1', position: { x: -3, y: 0, z: 0 }, rotation: NaN, reason: 'pushed' }] };
+    tw.world.advance();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('rotation');
+    expect(tw.messagesFor(conn(1))).toEqual([]);
+    expect(tw.messagesFor(conn(2))).toEqual([]);
+  });
+
   it('an override with an undeclared reason is skipped and reported', () => {
     const { tw, state, errors } = testWorld();
     state.nextTick = { overrides: [{ playerId: 'p1', position: { x: -3, y: 0, z: 0 }, reason: 'bridgeClosed' }] };

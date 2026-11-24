@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(70);
+select plan(72);
 
 create function pg_temp.err(sql text)
 returns text
@@ -251,6 +251,15 @@ select ok(public.record_game_result('test-game', '00000000-0000-0000-0000-000000
 select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000d002',
   array['00000000-0000-0000-0000-0000000000e5', '00000000-0000-0000-0000-0000000000e6']::uuid[],
   'win', null, 2, '2026-11-18T11:00:00Z', '2026-11-18T11:01:00Z');
+
+select is(pg_temp.err($$select public.record_game_result('test-game', '00000000-0000-0000-0000-00000000d003',
+  array['00000000-0000-0000-0000-0000000000e5', '00000000-0000-0000-0000-0000000000e6']::uuid[],
+  'win', null, 7, '2026-11-18T12:00:00Z', '2026-11-18T12:01:00Z')$$),
+  'PT400:VALIDATION_ERROR', 'score above test-game''s own maximum is rejected');
+select is(pg_temp.err($$select public.record_game_result(null, '00000000-0000-0000-0000-00000000d004',
+  array['00000000-0000-0000-0000-0000000000e5', '00000000-0000-0000-0000-0000000000e6']::uuid[],
+  'win', null, 1, '2026-11-18T12:00:00Z', '2026-11-18T12:01:00Z')$$),
+  'PT400:VALIDATION_ERROR', 'a null game type is rejected');
 
 reset role;
 set local role authenticated;

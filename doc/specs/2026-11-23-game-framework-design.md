@@ -1,6 +1,6 @@
 # Game Framework Design: One Engine, Five Game Modules
 
-**Version:** 0.2
+**Version:** 0.3
 
 **Date:** 11/23/2026
 
@@ -8,7 +8,7 @@
 
 **Status:** Approved by Ryan on 11/23/2026 (framework, generic wire protocol, shared results table).
 
-**Implements:** [initial spec](../initial-spec.md) §8 blocker "server designs for the other four games" (the shared part); prepares FR-06, FR-08, FR-09 and AC-03 to AC-06 for the four remaining games. **Builds on:** [runtime design](2026-11-17-runtime-transport-design.md) (unchanged except where §8 here says so). **Interfaces:** [component contract](../component-contract.md) §3, §5, §7. **Game source:** `frontend/games/rules.js` and the [local playhouse plan](../plans/local-playhouse/README.md).
+**Implements:** [initial spec](../initial-spec.md) §8 blocker "server designs for the other four games" (the shared part); prepares FR-06, FR-08, FR-09 and AC-03 to AC-06 for the four remaining games. **Builds on:** [runtime design](2026-11-17-runtime-transport-design.md) (unchanged except where §7 and §8 here say so). **Interfaces:** [component contract](../component-contract.md) §3, §5, §7. **Game source:** `frontend/games/rules.js` and the [local playhouse plan](../plans/local-playhouse/README.md).
 
 Labels: **Decided** means Adam decided it in brainstorming on 11/23/2026. **Proposal** means a call made while drafting; review of the pull request accepts it. **Proposal for Ryan** means it changes an approved requirement and needs Ryan's explicit agreement.
 
@@ -16,7 +16,7 @@ Labels: **Decided** means Adam decided it in brainstorming on 11/23/2026. **Prop
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.2 | 11/23/2026 | Ryan approved the framework, the generic wire protocol, and the shared results table (§7); §7.5 stays as the record of the fallback not taken, and the three items in §11 are marked approved. Earlier the same day (0.1): initial framework design, with game modules behind hooks in the existing World engine, with position overrides; Portal Partners moved onto it unchanged; a generic wire protocol keyed by game type; a shared results table proposed for Ryan. |
+| 0.3 | 11/23/2026 | After the final review: the "Builds on" line names §7 and §8; §5.2 tick timing gains a known-limits note (late `advance()` ordering, uncontained hook exceptions). Earlier the same day (0.2): Ryan approved the framework, the generic wire protocol, and the shared results table (§7); §7.5 stays as the record of the fallback not taken, and the three items in §11 are marked approved. Earlier the same day (0.1): initial framework design, with game modules behind hooks in the existing World engine, with position overrides; Portal Partners moved onto it unchanged; a generic wire protocol keyed by game type; a shared results table proposed for Ryan. |
 
 ## 1. Intent
 
@@ -115,6 +115,8 @@ The engine applies overrides before sending anything, so both clients see one co
 **Override details.** `player.corrected` for an override carries the player's latest move `sequence`, so the client drops any prediction older than the correction (as it does today for `bridgeClosed`). A disconnected player's character is moved the same way; they receive the position in their next snapshot, and others receive `player.updated`.
 
 **Tick timing.** The engine's `advance()` runs on the 100 ms timer in both the Durable Object and the mock, and also after every message, so `tick` may be called at irregular intervals. Modules compute from `now` and their own stored times (for example "train step due at `startedAt` + 25 s + n × 10 s"), never by counting calls. Within one `advance()`, `tick` runs **before** the time-out check (**Proposal**): if a module's own win is due by the same `now` that also reaches `roundMs`, the win counts.
+
+**Known limits.** If `advance()` runs late, `tick` can run before an already-overdue grace or idle deadline in the same pass (a window of about one 100 ms interval). Exceptions thrown by a hook are not yet contained; that is planned before the next game module.
 
 **Interaction rules.** Interactions with a position (a lever, a station) check their own range inside `interact`; the engine no longer checks range. Targets without a position, such as `rotate`, are allowed. A target not in the module's `targets` list gets `VALIDATION_ERROR` from the engine without calling the module (**Proposal**). Duplicate `actionId` handling stays in the engine.
 

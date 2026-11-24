@@ -599,6 +599,10 @@ export class World {
         this.onModuleError(`${game.gameType}: override for ${o.playerId} has undeclared reason ${o.reason}`);
         continue;
       }
+      if (o.rotation !== undefined && !Number.isFinite(o.rotation)) {
+        this.onModuleError(`${game.gameType}: override for ${o.playerId} has a rotation that is not a finite number`);
+        continue;
+      }
       const to = { ...o.position };
       m.position = to;
       if (o.rotation !== undefined) m.rotation = o.rotation;
