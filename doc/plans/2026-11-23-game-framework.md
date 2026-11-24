@@ -10,7 +10,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.1 | 11/23/2026 | Initial implementation plan for the approved game framework design. |
+| 0.1 | 11/23/2026 | Initial implementation plan for the approved game framework design. Added a lobby and movement guard at Adam's request: a recorded lobby transcript taken before any engine change (Task 2, Step 0) and checked after Tasks 3, 5, 6 and 9. |
 
 **Goal:** Portal Partners runs as the first game module behind a common hook interface in the World engine, the wire protocol carries any game's targets and state, and every game's results go to one shared Supabase results table. Portal Partners behaves exactly as before.
 
@@ -28,6 +28,7 @@
 - **No new dependencies.** No `package.json` changes.
 - **Platform-free engine.** Nothing in `shared/world/` imports Cloudflare, Supabase, the DOM or Node built-ins. Modules get time only from the round view's `now`, and never create IDs.
 - **No Portal Partners behavior change.** `shared/world/world.test.ts`, `shared/world/world-rounds.test.ts`, `shared/test/*`, `shared/client/*.test.ts` and `runtime/test/*` keep their assertions. Allowed edits: imports, renamed symbols, a `gameType` field added to an expected object, and the RPC name `record_game_result`. Any other change to an existing assertion is a stop-and-ask.
+- **Lobby and movement unchanged.** Courtyard speed 4.8, radius 23, spawn (0, 0, 4), entrance (-10.5, 0, 0), join radius 3.2, budget refill factor 1.25 and slack 0.5 stay as they are. The lobby transcript test (Task 2, Step 0) is recorded on the unchanged engine, and its snapshot file is never regenerated: `vitest -u` is forbidden on this branch. If it fails, fix the code, not the snapshot.
 - **Portal Partners values, copied exactly from `shared/world/config.ts`:** arena `halfX` 9.6, `halfZ` 7.7, speed 4; spawns (-3, 0, 6) and (0, 0, 6); round 180 000 ms; `scoreMax` 2; targets `lever`, `crystal-a`, `crystal-b`, `exit`; correction reason `bridgeClosed`; disconnect `{ duringGrace: 'keepRunning', onExpiry: 'cancel' }`. The other Portal Partners constants (gap, bridge, set-back, plate, lever, crystals, exit, radii, sample step 0.1) move unchanged.
 - **Target rule:** 1 to 32 characters from `A-Z`, `a-z`, `0-9` and `-` (`/^[A-Za-z0-9-]{1,32}$/`).
 - **Docs:** every edited project document gets its Version header and a Change History row (MM/DD/YYYY, newest first, one row per date), per `AGENTS.md`.
@@ -94,6 +95,14 @@
   - `game.interact` payload `target: string`; `game.state` payload `GameStatePayload`
 - Produces: `WorldConnection.interact(target: string): Promise<Result<null>>` (`types.ts` and `client/world.ts`)
 
+- [ ] **Step 0: Record the lobby transcript on the unchanged engine** (before any other edit on this branch). Create `shared/world/lobby-transcript.test.ts` with one test, `lobby transcript is unchanged`. It uses `makeWorld()` and the `test-helpers.ts` drivers to script, at 100 ms steps:
+  - admit players 1–3 and walk player 1 around the courtyard;
+  - send a too-fast move (`player.corrected rejected`), an out-of-bounds move (x 23.5), a stale sequence and a y of 3.5;
+  - try to join `portal` from too far away (`INVALID_ACTION`), walk to the entrance and join, then join with player 2;
+  - player 3 tries to join a full room (`ROOM_FULL`); player 1 leaves (back at the entrance) and walks again;
+  - a takeover of player 2's connection, `connectionLost` for player 3 then a return within grace, player 3's `world.leave`, and an idle expiry of player 1 (advance 600 000 ms).
+
+  No round starts. It collects every `Outgoing` (`to` and `message`) in order, plus `slotsUsed()` and `takeClosings()` after each step, and asserts `expect(log).toMatchSnapshot()`. Run `npx vitest run --project unit shared/world/lobby-transcript.test.ts` to write `shared/world/__snapshots__/lobby-transcript.test.ts.snap`. Read the snapshot and check that it shows the expected corrections and errors. Commit both files on their own: `test(world): record the lobby transcript before the game framework refactor`.
 - [ ] **Step 1: Write the failing tests.** In `realtime.test.ts`: `accepts any target matching the target rule` (`door`, `crystal-a`, `A1`, `x`.repeat(32) parse with `error: null`); `rejects targets outside the target rule` (`''`, `x`.repeat(33), `crystal_a`, `lever!`, `'two words'`, `7` as a number). Move the existing `target: 'door'` line in the "rejects unknown type…" test into the accepts test (an allowed mechanical edit: the rule changed by design). In `world-rounds.test.ts` add `game.state and the session snapshot carry gameType`: after a round starts, every `game.state` payload has `gameType: 'portal-partners'` and the starter's `room.snapshot.session.gameType` is `'portal-partners'`.
 - [ ] **Step 2: Run** `npx vitest run --project unit shared/contracts shared/world/world-rounds.test.ts`. Expected: the new tests fail.
 - [ ] **Step 3: Implement** the types above; the parser checks `typeof target === 'string' && TARGET_PATTERN.test(target)` with the existing message. In `world.ts`, add `gameType: room.config.gameType` to the `game.state` payload and the `session` object.
@@ -120,7 +129,7 @@
 - [ ] **Step 1: Write the failing tests** in `movement.test.ts`: `a path check of ignore returns ignored with the sequence recorded and the position kept` (a later move with the same sequence is `stale`); `a slower area speed shrinks the budget` (area speed 2: a 2.6-unit move from a fresh tracker is accepted, 2.6 + 0.01 after an immediate second move is rejected; cap = 2 + 0.5). Mechanically convert the existing tests.
 - [ ] **Step 2: Run** `npx vitest run --project unit shared/world/movement.test.ts`. Expected: FAIL (types).
 - [ ] **Step 3: Implement.** In `world.ts` replace `locationOf` with `areaOf(room): MoveArea | null` (the lobby gives `COURTYARD_AREA`, a playing room the Portal Partners arena from config for now, a waiting room null), and wrap today's `arenaBarrier` as `(f, t) => barrier(f, t) ? 'reject' : 'allow'`.
-- [ ] **Step 4: Run** `npm run typecheck && npm test`. Expected: PASS, with the world tests unchanged.
+- [ ] **Step 4: Run** `npm run typecheck && npm test`. Expected: PASS, with the world tests unchanged and `lobby transcript is unchanged` passing against the snapshot from Task 2.
 - [ ] **Step 5: Commit** `refactor(world): movement takes speed and bounds as values`.
 
 ### Task 4: The module interface and the Portal Partners module
@@ -208,6 +217,7 @@ Engine rules (keep today's message order and revision numbers):
 - [ ] **Step 1: Write the failing test** in `world-rounds.test.ts`: `duplicate actionId replays the first reply`. Start a round; player 1 sends `crystal-a` with `actionId: 'dup'` from the spawn (error `INVALID_ACTION`, "Move closer to interact."); walk player 1 to the crystal at (-6, -5) (bridge open via `lever` by player 2 first, as the existing win test does); send `crystal-a` with `actionId: 'dup'` again: the reply is the same `INVALID_ACTION` error and the next `game.state` still shows `crystals: [false, false]`.
 - [ ] **Step 2: Run** `npx vitest run --project unit shared/world/world-rounds.test.ts -t "duplicate actionId"`. Expected: FAIL only if the current engine differs. If it passes today, keep it as the regression guard and continue.
 - [ ] **Step 3: Implement** the engine rules above; delete `shared/world/portal-partners.ts` and its test, and remove the Portal Partners constants (arena, puzzle objects, `ROUND_MS`) from `config.ts`; update `index.ts` to export `./games/types`, `./games/portal-partners`, `./games/index`; update `test-helpers.ts` imports (`interact` keeps its signature with `target: string`).
+- [ ] **Step 4a: Lobby guard:** `npx vitest run --project unit shared/world/lobby-transcript.test.ts shared/world/world.test.ts shared/world/movement.test.ts` passes, and `git diff dev -- shared/world/world.test.ts shared/world/__snapshots__/` shows only import-line changes in `world.test.ts` and no snapshot change.
 - [ ] **Step 4: Check the engine is game-free:** `grep -n "portal\|Portal\|bridge\|crystal\|lever" shared/world/world.ts` prints nothing.
 - [ ] **Step 5: Run** `npm run typecheck && npm test && npm run test:runtime`. Expected: PASS with no existing assertion changed.
 - [ ] **Step 6: Commit** `refactor(world): run Portal Partners through the game module hooks`.
@@ -246,7 +256,7 @@ New engine behavior:
   - `stateChanged from tick bumps the revision once and sends game.state`.
 - [ ] **Step 2: Run** `npx vitest run --project unit shared/world/world-games.test.ts`. Expected: FAIL on tick, onConnection, unknown target and clamp; the others may already pass from Task 5.
 - [ ] **Step 3: Implement** the behavior above in `world.ts`.
-- [ ] **Step 4: Run** `npm run typecheck && npm test`. Expected: PASS.
+- [ ] **Step 4: Run** `npm run typecheck && npm test`. Expected: PASS, including `lobby transcript is unchanged` (the new tick call in `advance()` must not touch the lobby).
 - [ ] **Step 5: Commit** `feat(world): tick, connection, speed and ignore hooks for game modules`.
 
 ### Task 7: Shared results table
@@ -297,7 +307,8 @@ Migration contents, in order, all in `private` with the existing pattern (row-le
 **Files:** none (unless a check fails).
 
 - [ ] **Step 1: Run the full local suite**, the same as CI: `npm run typecheck && npm run test:frontend && npm test && npm run test:runtime && npm run test:db && npm run test:integration && npx supabase db advisors --type security --fail-on warn`. Expected: all PASS. The integration suite's two-account Portal Partners scenarios (win, loss, cancellation, reconnect, `ROOM_LOCKED`) are the end-to-end gate.
+- [ ] **Step 1a: Lobby guard, whole branch:** `git diff dev -- shared/world/__snapshots__/` shows only the file added in Task 2 Step 0 (compare with `git log --follow`: one commit), and `git diff dev -- shared/world/world.test.ts shared/test/world-contract-suite.ts` shows only imports and added `gameType` fields.
 - [ ] **Step 2: Frontend unchanged:** `git diff --stat dev -- frontend/` prints nothing, and `npm run build:frontend` succeeds.
 - [ ] **Step 3: Engine boundary:** `grep -rn "cloudflare\|supabase\|document\.\|window\.\|from 'node:" shared/world/` prints nothing.
 - [ ] **Step 4: Push and open the pull request** to `dev` (only when Adam asks), listing for Ryan: what changed, the checks run with their results, and Adam's hosted checklist below.
-- [ ] **Step 5: Adam's hosted checklist** (manual, after the pull request is approved; agents do not do these): apply the migration to hosted dev Supabase; check existing results still appear in history with the same `winsTotal`; deploy the dev Worker; two accounts play one Portal Partners round to a win with the unchanged frontend, and the result appears in both players' history.
+- [ ] **Step 5: Adam's hosted checklist** (manual, after the pull request is approved; agents do not do these): apply the migration to hosted dev Supabase; check existing results still appear in history with the same `winsTotal`; deploy the dev Worker; with two accounts, walk around the courtyard, see each other move, check the board, and join and leave a room (lobby check); two accounts play one Portal Partners round to a win with the unchanged frontend, and the result appears in both players' history.
