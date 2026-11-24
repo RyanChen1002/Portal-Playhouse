@@ -103,7 +103,7 @@ interface RoomState {
 }
 
 const STATE_INTERVAL_MS = 1000;
-
+const PP_TARGETS: readonly string[] = ['lever', 'crystal-a', 'crystal-b', 'exit'];
 /**
  * The platform-free world engine. Callers feed it admitted connections and parsed client
  * messages, then drain the outbox, closings and finished rounds. Time comes only from `now()`.
@@ -335,12 +335,16 @@ export class World {
   private handleInteract(
     p: PlayerState,
     requestId: string,
-    m: { sessionId: string; actionId: string; target: PortalPartnersTarget },
+    m: { sessionId: string; actionId: string; target: string },
   ) {
     const room = this.roomOf(p);
     const round = room.round;
     if (!round || round.ended || !round.playerIds.includes(p.card.id) || m.sessionId !== round.sessionId) {
       return { code: 'NOT_IN_GAME' as const, message: 'There is no round in progress for you.' };
+    }
+    // The parser now accepts any well-formed target; this game knows four of them.
+    if (!PP_TARGETS.includes(m.target)) {
+      return { code: 'INVALID_ACTION' as const, message: 'Interaction target is invalid.' };
     }
     const positions = new Map<string, Vec3>();
     const connected = new Map<string, boolean>();
@@ -350,7 +354,7 @@ export class World {
     }
     const latchedBefore = round.latched;
     const scoreBefore = score(round);
-    const r = interact(round, p.card.id, m.actionId, m.target, positions, connected);
+    const r = interact(round, p.card.id, m.actionId, m.target as PortalPartnersTarget, positions, connected);
     if (!r.ok) return { code: r.code, message: r.message };
 
     this.reply(p, requestId, null);
@@ -578,7 +582,7 @@ export class World {
     room.lastStateAt = now;
     const message: ServerMessage = {
       type: 'game.state',
-      payload: { sessionId: round.sessionId, revision: room.revision, state: this.gameState(room) },
+      payload: { sessionId: round.sessionId, revision: room.revision, gameType: room.config!.gameType, state: this.gameState(room) },
     };
     for (const id of round.playerIds) {
       const m = this.players.get(id);
@@ -747,7 +751,7 @@ export class World {
       roomId: room.id,
       summary: room.config ? this.summary(room) : null,
       players: this.members(room).map(presence),
-      session: room.round ? { sessionId: room.round.sessionId, ...this.gameState(room) } : null,
+      session: room.round ? { sessionId: room.round.sessionId, gameType: room.config!.gameType, ...this.gameState(room) } : null,
       revision: room.revision,
     };
   }

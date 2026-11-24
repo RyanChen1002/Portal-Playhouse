@@ -201,6 +201,19 @@ describe('World rounds', () => {
     expect(s[0]!.payload.state.crystals).toEqual([false, true]);
   });
 
+  it('game.state and the session snapshot carry gameType', () => {
+    const tw = setup(2, [1, 2]);
+    ready(tw, 1);
+    ready(tw, 2);
+    const msgs = tw.messagesFor(conn(1));
+    const states = only(msgs, 'game.state');
+    expect(states.length).toBeGreaterThan(0);
+    for (const s of states) expect(s.payload.gameType).toBe('portal-partners');
+    const snaps = only(msgs, 'room.snapshot');
+    expect(snaps).toHaveLength(1);
+    expect(snaps[0]!.payload.session?.gameType).toBe('portal-partners');
+  });
+
   it('game.state at least once per second', () => {
     const { tw, t0 } = startGame(3);
     tw.advanceBy(1000);
