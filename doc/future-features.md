@@ -4,6 +4,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.4 | 11/24/2026 | Added split roles for Power-Up Workshop (separate stations, or cable handoffs), left out of its first server version for simplicity. |
 | 0.3 | 11/22/2026 | The five games are now first-release scope ([initial spec](initial-spec.md) v0.7), so "More mini-games" now means games beyond those five. Updated the player-count note. |
 | 0.2 | 11/17/2026 | Noted that raising capacity above 16 may require moving the runtime from one Durable Object to one per room. Added deferred disconnect settings (pause, finish alone), early-quit-as-cancel, and the board for players not admitted, from the runtime design. |
 | 0.1 | 11/12/2026 | Created the list, collecting features already deferred in the initial spec, backend design, and auth research. |
@@ -31,6 +32,7 @@ Add new ideas as they come up. Keep each entry to its source and the reason it w
 | Capacity above 16 players | Idea | FR-03: "Revisit capacity after performance testing." The runtime design (11/17/2026) uses one Durable Object for the whole world, which fits 16 players. A much larger limit may require moving to one Durable Object per room plus a coordinator for world slots and the room board. That would add cross-object admission, reconnecting when changing rooms, and board reporting. See the [runtime design](specs/2026-11-17-runtime-transport-design.md) §4.1. |
 | Pause a round while a player reconnects | Deferred | [Runtime design](specs/2026-11-17-runtime-transport-design.md) §5.6. Each game declares its disconnect behavior; only "keep running" is built for Portal Partners. |
 | Let the remaining player finish a round alone | Deferred | [Runtime design](specs/2026-11-17-runtime-transport-design.md) §5.6. Only useful for games one player can complete; whether the absent player shares the win needs a decision. |
+| Power-Up Workshop split roles | Idea | Power-Up Workshop design (11/24/2026). The first server version lets either player do any step, as the practice version does, which is simpler and faster to build. Two ways to make both players necessary: **split stations**, where each player works their own side of the machine (for example one on gears, one on cables) and sees the other's progress, as the [game ideas](mini-game-ideas.md) §5 describe; or **cable handoffs**, where cables sit on one side and sockets on the other, so a cable has to be passed across. |
 | Early quit counts as a cancel, not a loss | Idea | [Runtime design](specs/2026-11-17-runtime-transport-design.md) §6.5. Saving cancelled rounds keeps this possible for future games; Portal Partners treats any leave as a cancel. |
 | Board for players not admitted to the world | Deferred | [Runtime design](specs/2026-11-17-runtime-transport-design.md) §2. A player rejected with `WORLD_FULL` cannot see the board. |
 
