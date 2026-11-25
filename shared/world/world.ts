@@ -15,6 +15,7 @@ import type {
   RoomSummary,
   GameStateBase,
   ServerMessage,
+  SessionSnapshot,
   Vec3,
   WorldSnapshot,
 } from '../contracts';
@@ -783,7 +784,8 @@ export class World {
     room.lastStateAt = this.now();
     const message: ServerMessage = {
       type: 'game.state',
-      payload: { sessionId: round.sessionId, revision: room.revision, gameType: round.game.gameType, state },
+      // Each module's `view` matches the state type its `gameType` names in the contract.
+      payload: { sessionId: round.sessionId, revision: room.revision, gameType: round.game.gameType, state } as GameStatePayload,
     };
     for (const id of round.playerIds) {
       const m = this.players.get(id);
@@ -875,12 +877,12 @@ export class World {
     const view = this.roundView(round);
     const fields = this.guarded(room, 'view', () => round.game.view(round.state, view));
     if (fields === ABORTED) return fields;
-    return {
-      ...(fields as Omit<GameStatePayload['state'], keyof GameStateBase>),
+    const base: GameStateBase = {
       startedAt: room.startedAt!,
       durationSeconds: Math.round(this.roundMsOf(room) / 1000),
       serverTime: iso(this.now()),
     };
+    return { ...fields, ...base } as GameStatePayload['state'];
   }
 
   private lobby(): RoomState {
@@ -954,7 +956,7 @@ export class World {
       roomId: room.id,
       summary: room.config ? this.summary(room) : null,
       players: this.members(room).map(presence),
-      session: round && state ? { sessionId: round.sessionId, gameType: round.game.gameType, ...state } : null,
+      session: round && state ? ({ sessionId: round.sessionId, gameType: round.game.gameType, ...state } as SessionSnapshot) : null,
       revision: room.revision,
     };
   }

@@ -16,6 +16,7 @@ import type {
   AppError,
   ConnectionState,
   ErrorCode,
+  GameStatePayload,
   Presence,
   Result,
   RoomId,
@@ -23,6 +24,7 @@ import type {
   ServerEventPayload,
   ServerEventType,
   ServerMessage,
+  SessionSnapshot,
   Vec3,
   WorldCloseReason,
   WorldConnection,
@@ -74,6 +76,13 @@ const fail = <T>(...args: Parameters<typeof appError>): Result<T> => failWith(ap
 
 const newId = () => globalThis.crypto.randomUUID();
 const clone = <T>(x: T): T => structuredClone(x);
+
+/** The room session a `game.state` describes, narrowed on its game type. */
+function sessionOf(p: GameStatePayload): SessionSnapshot {
+  return p.gameType === 'portal-partners'
+    ? { sessionId: p.sessionId, gameType: p.gameType, ...clone(p.state) }
+    : { sessionId: p.sessionId, gameType: p.gameType, ...clone(p.state) };
+}
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -722,7 +731,7 @@ class Connection implements WorldConnection {
       }
       case 'game.state':
         if (!fresh(msg.payload.revision)) return;
-        room.session = { sessionId: msg.payload.sessionId, gameType: msg.payload.gameType, ...clone(msg.payload.state) };
+        room.session = sessionOf(msg.payload);
         return;
       case 'game.finished': {
         const f = clone(msg.payload);

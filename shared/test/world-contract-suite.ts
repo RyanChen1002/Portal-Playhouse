@@ -108,6 +108,12 @@ function sees(observer: WorldConnection, playerId: string, at: Vec3): boolean {
 
 const ENTRANCE = PORTAL_ROOM.entrance;
 
+/** The connection's room session, when it is a Portal Partners round. */
+function ppSession(c: WorldConnection) {
+  const s = c.snapshot().room.session;
+  return s?.gameType === 'portal-partners' ? s : undefined;
+}
+
 /**
  * Plays a started Portal Partners round to a win: a holds the plate, b crosses and pulls the
  * lever, each collects a crystal, both stand at the exit, and b opens it.
@@ -116,10 +122,10 @@ export async function playToWin(a: WorldConnection, b: WorldConnection): Promise
   // a holds the plate; b crosses the open bridge and pulls the lever.
   const onPlate = v(PLATE.x, PLATE.z);
   await walkTo(a, onPlate);
-  await waitFor(() => b.snapshot().room.session?.bridgeOpen === true, 'the bridge to open');
+  await waitFor(() => ppSession(b)?.bridgeOpen === true, 'the bridge to open');
   await walkPath(b, [v(0, -4), v(LEVER.x - 0.5, LEVER.z)]);
   expectOk(await b.interact('lever'));
-  await waitFor(() => a.snapshot().room.session?.latched === true, 'the lever to latch');
+  await waitFor(() => ppSession(a)?.latched === true, 'the lever to latch');
 
   // a crosses the latched bridge to crystal A while b goes to crystal B.
   await Promise.all([
@@ -136,7 +142,7 @@ export async function playToWin(a: WorldConnection, b: WorldConnection): Promise
   const bExit = v(0.5, -6.5);
   await Promise.all([walkTo(a, aExit), walkTo(b, bExit)]);
   await waitFor(() => sees(b, a.playerId, aExit), 'b to see a at the exit');
-  await waitFor(() => b.snapshot().room.session?.crystals.every(Boolean) === true, 'both crystals');
+  await waitFor(() => ppSession(b)?.crystals.every(Boolean) === true, 'both crystals');
   expectOk(await b.interact('exit'));
 }
 
@@ -256,7 +262,7 @@ export function describeWorldContract(label: string, factory: WorldContractFacto
         const sid = await readyUp(a, b);
         expect(a.snapshot().self.position).toEqual(ARENA_SPAWNS[0]);
         expect(b.snapshot().self.position).toEqual(ARENA_SPAWNS[1]);
-        const session = a.snapshot().room.session!;
+        const session = ppSession(a)!;
         expect(session.bridgeOpen).toBe(false);
         expect(session.crystals).toEqual([false, false]);
         expect(session.durationSeconds).toBe(180);

@@ -1,4 +1,4 @@
-import type { GameStateBase, GameType, PowerUpWorkshopState, Vec3 } from '../../contracts';
+import type { GameStateBase, PowerUpWorkshopState, Vec3 } from '../../contracts';
 import { POWER_UP_WORKSHOP_TARGETS } from '../../contracts';
 import type { GameModule, InteractOutcome, RoundView } from './types';
 
@@ -55,7 +55,7 @@ const cablePlugged = (s: PUWState, cable: number): boolean => s.sockets.some((fi
 const score = (s: PUWState): number => s.gears.filter((g, i) => g === s.gearTargets[i]).length + s.sockets.filter(Boolean).length;
 
 export const POWER_UP_WORKSHOP: GameModule<PUWState, PUWView> = {
-  gameType: 'power-up-workshop' as GameType,
+  gameType: 'power-up-workshop',
   name: 'Power-Up Workshop',
   roundMs: PUW_ROUND_MS,
   arena: { halfX: 9.6, halfZ: 7.7, speed: 4 },
