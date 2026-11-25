@@ -1,8 +1,8 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.12
+**Version:** 0.13
 
-**Date:** 11/23/2026
+**Date:** 11/24/2026
 
 **Project option:** A — Contract-first build with midpoint swap
 
@@ -10,6 +10,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.13 | 11/24/2026 | Power-Up Workshop ([design](specs/2026-11-24-power-up-workshop-design.md) §4–§6): `power-up-workshop` joins the game types and `Result.cancelReason` gains `error` (§3); the Power-Up Workshop state and targets are added by pointing to the design (§5); §7 notes that `error` cancels are saved and never a win. **These contract changes need Ryan's approval in the pull request.** |
 | 0.12 | 11/23/2026 | After the final review: in a game room, an unknown `game.interact` target gets `VALIDATION_ERROR` (outside a game room the reply stays `NOT_IN_GAME`) (§5); the §7 Details link now points to the framework design §7. Earlier the same day (0.11): Ryan approved the [game framework design](specs/2026-11-23-game-framework-design.md): `gameType` is a game type from a list on `RoomSummary` and `Result`, replacing "Game types (open)" (§3); `game.interact` targets are checked by the server against the room's game, `game.state` and `room.snapshot.session` carry `gameType`, and `player.corrected.reason` may be game-declared (§5); one shared results table keyed by game type replaces one table per game (§7); removed the result schemas from the §9 open decisions. Earlier the same day (0.10): frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (§1, §2); removed it from the §9 open decisions. |
 | 0.9 | 11/22/2026 | **Scope change** ([initial spec](initial-spec.md) v0.7): all five games are now first-release scope and playable in real time, so the other four games join the contract, with their interfaces open until their designs are approved (§3, §5–§7). Removed "tentative until Ryan approves" wording, because the runtime design merged in PR #22. Updated §8 to say the shared code also covers the real-time interface. Removed version labels such as "(v0.7)" and "Proposed v0.4" from the body, because those items are merged (PR #18, PR #22); **Proposed** now marks only items not yet agreed. Portal Partners interface unchanged. |
 | 0.8 | 11/18/2026 | Proposed by Adam on `feature/runtime-transport`; tentative until Ryan approves the pull request. Aligned the §5 message table and the §3 Result model with the built wire shapes in `shared/contracts/realtime.ts` (`world.snapshot`, `room.snapshot`, `player.left` reasons, `GameResult`). Added client notes on reconnect outcomes, late `failed` results, and close codes, and the connection's `closeReason`. Pointed the stale "game rules remain TBD" line to runtime design §6. |
@@ -51,13 +52,13 @@ Server-generated string IDs; Supabase user identity for player IDs; UTC ISO 8601
 | Presence | `playerId`, `roomId`, `position: {x: number, y: number, z: number}`, `rotation: number` (proposed yaw in radians) |
 | RoomSummary | `id`, `name`, `gameType: a game type or null`, `minPlayers: integer`, `maxPlayers: integer`, `status: waiting/playing`, `players: [{id, displayName, avatarId}]`, `sessionId: string or null`, `startedAt: timestamp or null`, `durationSeconds: integer or null`, `score: number or null`, `revision: integer` |
 | Session | `id`, `roomId`, `gameType`, fixed `playerIds`, `status: waiting/playing/finished/cancelled`, `startedAt`, `completedAt` (nullable timestamps), `revision: integer` |
-| Result (`GameResult`) | `id`, `sessionId`, `gameType: a game type`, `outcome: win/loss/cancelled`, `cancelReason: left/disconnected or null` (set exactly when cancelled), `score: number`, `startedAt: timestamp`, `completedAt: timestamp` (for a cancellation, when it was cancelled), `durationSeconds: integer`, `players: [{id, displayName, avatarId}]` (each participant's current display name and avatar) |
+| Result (`GameResult`) | `id`, `sessionId`, `gameType: a game type`, `outcome: win/loss/cancelled`, `cancelReason: left/disconnected/error or null` (set exactly when cancelled), `score: number`, `startedAt: timestamp`, `completedAt: timestamp` (for a cancellation, when it was cancelled), `durationSeconds: integer`, `players: [{id, displayName, avatarId}]` (each participant's current display name and avatar) |
 
 Unless typed otherwise, identity/name/game fields above are strings. Propose stable avatar IDs `avatar-01` through `avatar-20`; the local preview maps these IDs to the [20 original characters](plans/2026-11-12-local-3d-preview.md#character-roster) selected by Ryan on 11/13/2026. Names are UI labels; persist the avatar ID, not the character name. Reject unknown IDs. New profiles start with `avatar-01`, and `winsTotal` is `0` until results exist.
 
 **Display names:** trim leading and trailing whitespace and collapse internal runs to one space. The stored and returned name is that normalized form. It must be 1–24 Unicode code points, with no control or invisible/formatting characters. Names are **unique, compared case-insensitively**, and players may change them later, including changing only the case of their own name. The exact character sets are in the [backend design](specs/2026-11-11-backend-foundation-auth-profiles-design.md) and its plan. `shared/contracts/` exports the rule so the UI can validate before calling.
 
-**Game types:** `RoomSummary.gameType` and `Result.gameType` are a game type from the list: `portal-partners` now, and each other game's design adds its value and what its score means ([framework design](specs/2026-11-23-game-framework-design.md) §8).
+**Game types:** `RoomSummary.gameType` and `Result.gameType` are a game type from the list: `portal-partners` and `power-up-workshop`, and each other game's design adds its value and what its score means ([framework design](specs/2026-11-23-game-framework-design.md) §8).
 
 World bounds, axes, score units, and movement cadence require agreement. Board timing is derived from authoritative start time; remaining time applies only to timed games.
 
@@ -129,6 +130,8 @@ WebSocket to the World Durable Object ([runtime design](specs/2026-11-17-runtime
 
 Errors: the existing codes in §4 plus NOT_IN_GAME, INVALID_ACTION, and GAME_NOT_READY (readying outside a waiting room), all now adopted; they are added to `shared/contracts/`. `SERVICE_UNAVAILABLE` is also returned when a connection cannot be admitted (for example, Supabase unreachable or too many connections awaiting sign-in).
 
+**Power-Up Workshop:** targets `gear-0` to `gear-2`, `socket-0` to `socket-2`, `cable-0` to `cable-2`, and `power-right`; the `game.state` fields and no correction reasons are in the [Power-Up Workshop design](specs/2026-11-24-power-up-workshop-design.md) §4.2 and §5. The room ID is `workshop`.
+
 **Other games:** each reuses this envelope, room lifecycle, readiness, and `game.finished`/`result.saved` flow. Each game's design defines its targets, its `state` fields (always including `startedAt`, `durationSeconds`, and `serverTime`), and its correction reasons, on the framework in the [framework design](specs/2026-11-23-game-framework-design.md).
 
 **Client notes:**
@@ -168,7 +171,7 @@ Proposed persistence rules:
 
 - Unique `sessionId` in the results table; retries cannot duplicate a result. New replay, new session ID.
 - One cooperative win per participant per unique winning session; no wins for loss/cancellation. Derive total wins from authoritative records, or maintain totals atomically/idempotently if materialized.
-- **Cancelled sessions are saved** with outcome `cancelled` and a `cancelReason` (`left` or `disconnected`). They count as neither a win nor a loss and never add wins, and they appear in personal history. This is consistent with recording cancellation state. Rounds lost to a runtime restart are not saved.
+- **Cancelled sessions are saved** with outcome `cancelled` and a `cancelReason` (`left`, `disconnected` or `error`). They count as neither a win nor a loss and never add wins, and they appear in personal history. This is consistent with recording cancellation state. `error` means game code threw during the round: the engine cancels only that round, and the result is saved as cancelled, never a win ([Power-Up Workshop design](specs/2026-11-24-power-up-workshop-design.md) §6). If `start` itself throws, both players receive `game.finished` for a session ID they never saw in a snapshot. Rounds lost to a runtime restart are not saved.
 - If saving fails, report pending/failed status and retry on the backend; never claim unsaved results are persisted. Send `result.saved` after successful recovery. The runtime writes a pending result to durable storage before announcing `game.finished` with `persistenceStatus: "pending"`, then retries with backoff; the unique session ID makes retries safe. Details: [runtime design](specs/2026-11-17-runtime-transport-design.md) §7.3.
 - Enforce participant access to private history; nonparticipants see only approved board summaries.
 

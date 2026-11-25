@@ -1,13 +1,14 @@
 # Portal Playhouse — Initial Specification
 
-**Version:** 0.9
+**Version:** 0.10
 
-**Date:** 11/23/2026
+**Date:** 11/24/2026
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.10 | 11/24/2026 | Power-Up Workshop's server design is done, so it leaves the §8 blocker for the other four games' designs. The practice-levels question is answered for Power-Up Workshop only (it rotates the five combinations) and stays open for the other games. FR-08's approved designs now include one. |
 | 0.9 | 11/23/2026 | Ryan approved the game framework design: FR-09 and AC-06 now use one shared results table; the §8 blocker for the other four games' designs now asks for a score range instead of a result table. Earlier the same day (0.8): frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (FR-12); removed it from the §8 blockers. |
 | 0.7 | 11/22/2026 | **Scope change:** the first release now includes all five games (Portal Partners, Playhouse Cafe, Room Rescue, Tiny Train Team, Power-Up Workshop), each playable in real time by two players, instead of one game. Updated §1, FR-06, FR-08, FR-09, AC-03 to AC-06, §4, and §8, and listed the four new game designs as blockers. Removed "pending Ryan's approval" from the runtime wording, because the runtime design merged in PR #22. Shortened §7 to the chosen architecture, linking the research for the options compared. Defined real-time (server) play and offline practice. The disconnect policy is no longer marked Proposed, because the runtime design adopted it (PR #22). Recorded in §8 that the hosted two-account Portal Partners test passed on 11/22/2026. |
 | 0.6 | 11/18/2026 | AC-05 now points to the Portal Partners winning and losing sequences in the [runtime design](specs/2026-11-17-runtime-transport-design.md) §6 and §10, replacing "once the first game is chosen". No other requirements changed. |
@@ -44,7 +45,7 @@ Register or sign in, load a profile, choose an avatar, enter the 3D lobby, check
 | FR-05 | Board shows room availability, configured minimum/maximum players, participant display names, current score, and timing for every game room. **Proposed:** elapsed time from authoritative round start; remaining time only for timed games. |
 | FR-06 | Each game has configurable minimum/maximum players. Portal Partners requires exactly two players; **proposed:** the other four games do too, as their offline practice versions do. Other game sizes are future extensions. |
 | FR-07 | Start when both required players are ready. Lock participation while playing; other authenticated users may read board score/status, but in-room spectator mode is deferred. |
-| FR-08 | Deliver five complete cooperative games for real-time (server) play, each with explicit controls, server-validated actions, win/loss, scoring, and replay. Rules: Portal Partners in the [runtime design](specs/2026-11-17-runtime-transport-design.md) §6; the other four games in their approved designs, starting from the offline practice rules in the [local playhouse plan](plans/local-playhouse/README.md). |
+| FR-08 | Deliver five complete cooperative games for real-time (server) play, each with explicit controls, server-validated actions, win/loss, scoring, and replay. Rules: Portal Partners in the [runtime design](specs/2026-11-17-runtime-transport-design.md) §6; Power-Up Workshop in its [approved design](specs/2026-11-24-power-up-workshop-design.md); the other three games in their approved designs, starting from the offline practice rules in the [local playhouse plan](plans/local-playhouse/README.md). |
 | FR-09 | Persist results in one shared Supabase results table keyed by game type ([framework design](specs/2026-11-23-game-framework-design.md) §7), and show personal history and total wins across all games. **Proposed:** each winning participant gets one win per unique completed session; losses/cancellations add none. |
 | FR-10 | Show clear errors for invalid actions, full/locked rooms, authentication failures, disconnects, and storage failures. A rejected room join preserves the previous location. |
 | FR-11 | First release targets desktop browsers and keyboard controls. Camera view, controls, supported browsers, and exact layouts are open. |
@@ -90,8 +91,8 @@ Milestones: review spec/contract -> accounts/profile -> two-user lobby/board/roo
 
 Implementation blockers:
 
-- Server designs for the other four games: rules with one character per player, interaction targets, timing, score, win/loss, disconnect settings, and score range (the results table is shared). Hardest to synchronize: Room Rescue's shared sofa carry, Tiny Train Team's moving train, and Playhouse Cafe's carried items.
-- Whether real-time (server) play includes the five practice levels per game, and whether offline practice stays in the release.
+- Server designs for the other three games (Playhouse Cafe, Room Rescue, Tiny Train Team; Power-Up Workshop's is done: [design](specs/2026-11-24-power-up-workshop-design.md)): rules with one character per player, interaction targets, timing, score, win/loss, disconnect settings, and score range (the results table is shared). Hardest to synchronize: Room Rescue's shared sofa carry, Tiny Train Team's moving train, and Playhouse Cafe's carried items.
+- Whether real-time (server) play includes the five practice levels per game (answered for Power-Up Workshop only, which rotates the five combinations round by round; still open for the other games), and whether offline practice stays in the release.
 - Controls/camera/browsers; board timing and win-count defaults.
 
 Ryan selected the current original character roster; final production artwork review, performance targets, dates, and swap work remain open.
