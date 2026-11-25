@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CorrectionReason } from '../contracts';
-import { admit, boards, card, conn, interact, move, only, ready } from './test-helpers';
+import { admit, boards, card, conn, interact, join, leave, move, only, ready } from './test-helpers';
 import { setThrowOnStart, testWorld, type TestRound } from './test-game';
 
 const PUSHED = 'pushed' as CorrectionReason;
@@ -296,6 +296,30 @@ describe('hook exceptions', () => {
       expectErrorCancel(r, hook, players);
     },
   );
+
+  it('start receives the room round number', () => {
+    const { tw, sid, started } = testWorld({}, { extraRoom: true });
+    const sidOf = (n: number) => only(tw.messagesFor(conn(n)), 'room.snapshot').pop()!.payload.session!.sessionId;
+    let current = sid;
+    for (let i = 0; i < 2; i++) {
+      started.test[i]!.interactResult = { ok: true, effect: { end: 'win' } };
+      interact(tw, 1, current, 'win');
+      tw.clear();
+      ready(tw, 1);
+      ready(tw, 2);
+      current = sidOf(1);
+    }
+    expect(started.test.map((s) => s.roundNumber)).toEqual([0, 1, 2]);
+    expect(started.test2.map((s) => s.roundNumber)).toEqual([0]);
+
+    // A cancelled round still counts.
+    leave(tw, 1);
+    tw.clear();
+    join(tw, 1, 'test');
+    ready(tw, 1);
+    ready(tw, 2);
+    expect(started.test.map((s) => s.roundNumber)).toEqual([0, 1, 2, 3]);
+  });
 
   it('start throwing cancels the round with error', () => {
     const r = testWorld();

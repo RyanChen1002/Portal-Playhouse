@@ -97,6 +97,8 @@ interface RoomState {
   startedAt: string | null;
   score: number | null;
   round: Round | null;
+  /** Rounds started in this room so far; the next round's number. */
+  roundsStarted: number;
   /** When `game.state` was last sent to the round's players. */
   lastStateAt: number;
 }
@@ -538,7 +540,8 @@ export class World {
     room.sessionId = sessionId;
     room.startedAt = iso(now);
     const view = this.roundView(round);
-    const state = this.guarded(room, 'start', () => game.start(view));
+    const roundNumber = room.roundsStarted++;
+    const state = this.guarded(room, 'start', () => game.start(view, roundNumber));
     if (state === ABORTED) return;
     round.state = state;
     const score = this.scoreOf(room, round);
@@ -861,6 +864,7 @@ export class World {
       startedAt: null,
       score: null,
       round: null,
+      roundsStarted: 0,
       lastStateAt: 0,
     };
   }

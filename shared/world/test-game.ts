@@ -24,6 +24,8 @@ export interface TestState {
   nextOnConnection: Effect;
   /** The hook (by name) that throws `new Error('boom')`; null: none. */
   throwIn: string | null;
+  /** The `roundNumber` `start` received. */
+  roundNumber: number;
 }
 
 /** `start` has no state yet, so it throws when this module-level flag is set. */
@@ -55,7 +57,7 @@ export const TEST_GAME: GameModule<TestState> = {
   targets: ['push', 'win'],
   correctionReasons: ['pushed' as CorrectionReason],
   disconnect: { duringGrace: 'keepRunning', onExpiry: 'cancel' },
-  start: () => {
+  start: (_view, roundNumber) => {
     if (throwOnStart) throw new Error('boom');
     return {
       calls: { checkMove: [], interact: [], tick: 0, onConnection: [] },
@@ -67,6 +69,7 @@ export const TEST_GAME: GameModule<TestState> = {
       nextTick: {},
       nextOnConnection: {},
       throwIn: null,
+      roundNumber,
     };
   },
   checkMove(s, _view, playerId) {
@@ -116,6 +119,8 @@ export interface TestRound {
   state: TestState;
   /** Messages reported through `onModuleError`. */
   errors: string[];
+  /** Every state `start` returned, per room, in start order. */
+  started: { test: TestState[]; test2: TestState[] };
 }
 
 /** The entrance of the `extraRoom` room `test2`, across the courtyard from `test`. */
@@ -132,12 +137,22 @@ export function testWorld(
   { extraRoom = false }: { extraRoom?: boolean } = {},
 ): TestRound {
   let state: TestState | undefined;
+  const started: TestRound['started'] = { test: [], test2: [] };
   const base = { ...TEST_GAME, ...overrides };
   const game: GameModule<TestState> = {
     ...base,
-    start(view) {
-      state = base.start(view);
+    start(view, roundNumber) {
+      state = base.start(view, roundNumber);
+      started.test.push(state);
       return state;
+    },
+  };
+  const game2: GameModule<TestState> = {
+    ...TEST_GAME,
+    start(view, roundNumber) {
+      const s = TEST_GAME.start(view, roundNumber);
+      started.test2.push(s);
+      return s;
     },
   };
   const room = (id: string, g: GameModule, entrance: Vec3): GameRoomConfig => ({
@@ -154,7 +169,7 @@ export function testWorld(
     idleMs: IDLE_MS,
     rooms: [
       room('test', game as GameModule, ENTRANCE),
-      ...(extraRoom ? [room('test2', TEST_GAME as GameModule, ENTRANCE_2)] : []),
+      ...(extraRoom ? [room('test2', game2 as GameModule, ENTRANCE_2)] : []),
     ],
   };
   const errors: string[] = [];
@@ -174,5 +189,5 @@ export function testWorld(
   const sid = snap?.payload.session?.sessionId;
   if (!sid || !state) throw new Error('testWorld: the round did not start');
   tw.clear();
-  return { tw, sid, state, errors };
+  return { tw, sid, state, errors, started };
 }
