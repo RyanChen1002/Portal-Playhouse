@@ -18,6 +18,7 @@ import type {
 } from '../contracts/index';
 import { COURTYARD_SPAWN, PORTAL_ROOM } from '../world/config';
 import { ARENA_SPAWNS, CRYSTAL_A, CRYSTAL_B, LEVER, PLATE } from '../world/games/portal-partners';
+import { CABLE_POINTS, GEAR_POINTS, POWER_LEFT, POWER_RIGHT, SOCKET_POINTS } from '../world/games/power-up-workshop';
 
 export interface WorldContractFactory {
   /** A fresh client, signed in to a new account that has never played. */
@@ -144,6 +145,54 @@ export async function playToWin(a: WorldConnection, b: WorldConnection): Promise
   await waitFor(() => sees(b, a.playerId, aExit), 'b to see a at the exit');
   await waitFor(() => ppSession(b)?.crystals.every(Boolean) === true, 'both crystals');
   expectOk(await b.interact('exit'));
+}
+
+/** The connection's room session, when it is a Power-Up Workshop round. */
+function puwSession(c: WorldConnection) {
+  const s = c.snapshot().room.session;
+  return s?.gameType === 'power-up-workshop' ? s : undefined;
+}
+
+/**
+ * Plays a started Power-Up Workshop round to a win, whatever the level: a sets the gears and
+ * then holds the left power station; b carries each cable to its socket, then presses the right
+ * power station once it has seen a on the left pad. Standing points sit 0.5 inside the 1.9 radius.
+ */
+export async function playWorkshopToWin(a: WorldConnection, b: WorldConnection): Promise<void> {
+  const session = puwSession(a);
+  if (!session) throw new Error('playWorkshopToWin: not a Power-Up Workshop round');
+  const { gearTargets, socketCables } = session;
+
+  const aPart = (async () => {
+    for (let i = 0; i < 3; i++) {
+      await walkTo(a, v(GEAR_POINTS[i]!.x + 0.5, GEAR_POINTS[i]!.z));
+      for (let n = 0; n < gearTargets[i]!; n++) expectOk(await a.interact(`gear-${i}`));
+    }
+    await walkTo(a, v(POWER_LEFT.x, POWER_LEFT.z));
+  })();
+
+  const bPart = (async () => {
+    for (let i = 0; i < 3; i++) {
+      const cable = socketCables[i]!;
+      await walkTo(b, v(CABLE_POINTS[cable]!.x + 0.5, CABLE_POINTS[cable]!.z));
+      expectOk(await b.interact(`cable-${cable}`));
+      await walkTo(b, v(SOCKET_POINTS[i]!.x + 0.5, SOCKET_POINTS[i]!.z));
+      expectOk(await b.interact(`socket-${i}`));
+    }
+    await walkTo(b, v(POWER_RIGHT.x, POWER_RIGHT.z));
+  })();
+
+  await Promise.all([aPart, bPart]);
+  const left = v(POWER_LEFT.x, POWER_LEFT.z);
+  await waitFor(() => sees(b, a.playerId, left), 'b to see a on the left power station');
+  await waitFor(
+    () => {
+      const s = puwSession(b);
+      return !!s && s.gears.every((g, i) => g === s.gearTargets[i]) && s.sockets.every(Boolean);
+    },
+    'the gears and sockets to be complete',
+  );
+  expectOk(await b.interact('power-right'));
 }
 
 export function describeWorldContract(label: string, factory: WorldContractFactory): void {
