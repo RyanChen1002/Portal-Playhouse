@@ -8,7 +8,7 @@ export type GameType = (typeof GAME_TYPES)[number];
 export const TARGET_PATTERN = /^[A-Za-z0-9-]{1,32}$/;
 export type PortalPartnersTarget = 'lever' | 'crystal-a' | 'crystal-b' | 'exit';
 export type Outcome = 'win' | 'loss' | 'cancelled';
-export type CancelReason = 'left' | 'disconnected';
+export type CancelReason = 'left' | 'disconnected' | 'error';
 export type PersistenceStatus = 'pending' | 'saved' | 'failed';
 export type CorrectionReason = 'rejected' | 'bridgeClosed';
 
