@@ -4,7 +4,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(72);
+select plan(80);
 
 create function pg_temp.err(sql text)
 returns text
@@ -236,6 +236,44 @@ select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select is(pg_temp.err($$select public.get_my_results()$$), 'PT401:UNAUTHORIZED', 'signed-out caller is PT401');
 select is(pg_temp.err($$select * from private.game_results$$), '42501:permission denied for schema private',
   'authenticated cannot read results directly');
+
+-- ---------------------------------------------------------------------------
+-- Power-Up Workshop and the error cancel reason (players C and D, after their checks above)
+-- ---------------------------------------------------------------------------
+reset role;
+select is((select jsonb_object_agg(game_type, score_max) from private.game_types),
+  '{"portal-partners": 2, "power-up-workshop": 6}'::jsonb, 'game_types has exactly portal-partners 2 and power-up-workshop 6');
+set local role service_role;
+
+select ok(public.record_game_result('power-up-workshop', '00000000-0000-0000-0000-00000000f001',
+  array['00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4']::uuid[],
+  'win', null, 6, '2026-11-19T10:00:00Z', '2026-11-19T10:01:00Z') ? 'resultId',
+  'a power-up-workshop win with score 6 saves');
+select is(pg_temp.err($$select public.record_game_result('power-up-workshop', '00000000-0000-0000-0000-00000000f002',
+  array['00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4']::uuid[],
+  'win', null, 7, '2026-11-19T10:00:00Z', '2026-11-19T10:01:00Z')$$),
+  'PT400:VALIDATION_ERROR', 'a power-up-workshop score of 7 is rejected');
+select ok(public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000f003',
+  array['00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4']::uuid[],
+  'cancelled', 'error', 0, '2026-11-19T11:00:00Z', '2026-11-19T11:01:00Z') ? 'resultId',
+  'portal-partners: a cancelled result with reason error saves');
+select ok(public.record_game_result('power-up-workshop', '00000000-0000-0000-0000-00000000f004',
+  array['00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4']::uuid[],
+  'cancelled', 'error', 0, '2026-11-19T12:00:00Z', '2026-11-19T12:01:00Z') ? 'resultId',
+  'power-up-workshop: a cancelled result with reason error saves');
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000f005',
+  array['00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4']::uuid[],
+  'win', 'error', 1, now(), now())$$),
+  'PT400:VALIDATION_ERROR', 'error with outcome win is rejected by the function');
+select is(pg_temp.err($$select public.record_game_result('portal-partners', '00000000-0000-0000-0000-00000000f006',
+  array['00000000-0000-0000-0000-0000000000e3', '00000000-0000-0000-0000-0000000000e4']::uuid[],
+  'cancelled', 'timeout', 0, now(), now())$$),
+  'PT400:VALIDATION_ERROR', 'an unknown cancel reason (timeout) is still rejected');
+reset role;
+select throws_ok($$insert into private.game_results (game_type, session_id, outcome, cancel_reason, score, started_at, completed_at)
+  values ('portal-partners', '00000000-0000-0000-0000-00000000f007', 'win', 'error', 0, now(), now())$$,
+  '23514', null, 'table check: error with outcome win is rejected');
+set local role authenticated;
 
 -- ---------------------------------------------------------------------------
 -- More than one game type: a test-only game type with its own score range.
