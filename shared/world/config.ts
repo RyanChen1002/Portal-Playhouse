@@ -1,5 +1,6 @@
 import type { RoomId, Vec3 } from '../contracts';
 import { PORTAL_PARTNERS } from './games/portal-partners';
+import { POWER_UP_WORKSHOP } from './games/power-up-workshop';
 import type { GameModule } from './games/types';
 
 /** A game room: where it is in the courtyard and which game it runs (name and gameType come from `game`). */
@@ -48,6 +49,16 @@ export const PORTAL_ROOM: GameRoomConfig = {
   joinRadius: 3.2,
 };
 
+// Power-Up Workshop room: the fifth slot on the courtyard ring (angle 198 degrees)
+export const WORKSHOP_ROOM: GameRoomConfig = {
+  id: 'workshop',
+  game: POWER_UP_WORKSHOP,
+  minPlayers: 2,
+  maxPlayers: 2,
+  entrance: { x: -3.24, y: 0, z: -9.99 },
+  joinRadius: 3.2,
+};
+
 // Movement budget
 export const BUDGET_REFILL_FACTOR = 1.25;
 export const BUDGET_SLACK = 0.5;
@@ -60,5 +71,5 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
   worldLimit: WORLD_LIMIT,
   graceMs: GRACE_MS,
   idleMs: IDLE_MS,
-  rooms: [PORTAL_ROOM],
+  rooms: [PORTAL_ROOM, WORKSHOP_ROOM],
 };

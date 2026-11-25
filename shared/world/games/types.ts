@@ -41,7 +41,8 @@ export interface GameModule<S = unknown, V extends object = object> {
   targets: readonly string[];
   correctionReasons: readonly CorrectionReason[];
   disconnect: DisconnectSettings;
-  start(view: RoundView): S;
+  /** `roundNumber`: 0 for the first round started in this room, then 1, 2, ...; cancelled rounds count. */
+  start(view: RoundView, roundNumber: number): S;
   checkMove(s: S, view: RoundView, playerId: string, from: Vec3, to: Vec3): MoveVerdict;
   speed?(s: S, view: RoundView, playerId: string): number;
   afterMove?(s: S, view: RoundView, playerId: string): Effect;

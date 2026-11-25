@@ -5,9 +5,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createTestAccounts } from '../../scripts/create-test-accounts';
 import type { GameResult, PortalClient, Result, WorldConnection } from '../contracts/index';
-import { PORTAL_ROOM } from '../world/config';
+import { PORTAL_ROOM, WORKSHOP_ROOM } from '../world/config';
 import { signedInRuntimeClient, startLocalRuntime, type LocalRuntime, type RuntimeClient } from './runtime-env';
-import { playToWin, record, waitFor, walkTo } from './world-contract-suite';
+import { playToWin, playWorkshopToWin, record, waitFor, walkTo } from './world-contract-suite';
 
 const TEST_TIMEOUT_MS = 90_000;
 let runtime: LocalRuntime;
@@ -30,11 +30,11 @@ async function twoPlayers(): Promise<[RuntimeClient, WorldConnection, RuntimeCli
   return [ca, await connect(ca), cb, await connect(cb)];
 }
 
-/** Both walk to the portal entrance, join, and ready; resolves with the round's session id. */
-async function startRound(a: WorldConnection, b: WorldConnection): Promise<string> {
-  await Promise.all([walkTo(a, PORTAL_ROOM.entrance), walkTo(b, PORTAL_ROOM.entrance)]);
-  ok(await a.joinRoom(PORTAL_ROOM.id));
-  ok(await b.joinRoom(PORTAL_ROOM.id));
+/** Both walk to the room's entrance (the portal by default), join, and ready; resolves with the round's session id. */
+async function startRound(a: WorldConnection, b: WorldConnection, room = PORTAL_ROOM): Promise<string> {
+  await Promise.all([walkTo(a, room.entrance), walkTo(b, room.entrance)]);
+  ok(await a.joinRoom(room.id));
+  ok(await b.joinRoom(room.id));
   ok(await a.setReady(true));
   ok(await b.setReady(true));
   await waitFor(() => !!a.snapshot().room.session && !!b.snapshot().room.session, 'the round to start');
@@ -234,6 +234,65 @@ describe('real runtime: Supabase outage', () => {
           const rows = await results(rc.client);
           expect(rows).toHaveLength(1);
           expect(rows[0]).toMatchObject({ sessionId: sid, outcome: 'cancelled', cancelReason: 'left' });
+        }
+      } finally {
+        await leaveAll();
+        await runtime.restart();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
+
+describe('real runtime: Power-Up Workshop', () => {
+  it(
+    'a win is saved for both players with score 6 and raises winsTotal by exactly 1',
+    async () => {
+      const [ca, a, cb, b] = await twoPlayers();
+      const before = [await winsTotal(ca.client), await winsTotal(cb.client)];
+      const sid = await startRound(a, b, WORKSHOP_ROOM);
+      const seenA = record(a);
+      const seenB = record(b);
+      await playWorkshopToWin(a, b);
+      for (const seen of [seenA, seenB]) {
+        await waitFor(() => seen.some((e) => e.type === 'result.saved'), 'the win to be saved', 30_000);
+      }
+      for (const [rc, was] of [
+        [ca, before[0]!],
+        [cb, before[1]!],
+      ] as const) {
+        const rows = (await results(rc.client)).filter((r) => r.sessionId === sid);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ gameType: 'power-up-workshop', outcome: 'win', score: 6, cancelReason: null });
+        expect(await winsTotal(rc.client)).toBe(was + 1);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'a timed-out round is saved as a loss with the score at that moment',
+    async () => {
+      const [ca, , cb] = await twoPlayers();
+      await leaveAll();
+      const winsBefore = [await winsTotal(ca.client), await winsTotal(cb.client)];
+      await runtime.restart({ ROUND_MS: '3000' });
+      try {
+        const a = await connect(ca);
+        const b = await connect(cb);
+        const sid = await startRound(a, b, WORKSHOP_ROOM);
+        const seenB = record(b);
+        await waitFor(() => b.snapshot().lastFinished?.sessionId === sid, 'the round to time out', 10_000);
+        const finished = b.snapshot().lastFinished!;
+        expect(finished.outcome).toBe('loss');
+        await waitFor(() => seenB.some((e) => e.type === 'result.saved'), 'the loss to be saved', 15_000);
+        for (const [rc, was] of [
+          [ca, winsBefore[0]!],
+          [cb, winsBefore[1]!],
+        ] as const) {
+          const row = (await results(rc.client)).find((r) => r.sessionId === sid);
+          expect(row).toMatchObject({ gameType: 'power-up-workshop', outcome: 'loss', score: finished.score });
+          expect(await winsTotal(rc.client)).toBe(was);
         }
       } finally {
         await leaveAll();

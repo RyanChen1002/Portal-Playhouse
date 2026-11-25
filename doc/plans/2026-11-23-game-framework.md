@@ -2,14 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Version:** 0.1
+**Version:** 0.2
 
-**Date:** 11/23/2026
+**Date:** 11/24/2026
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | 11/24/2026 | Recorded the hosted run after PR #32 merged (Task 9, Hosted run). No plan steps changed. |
 | 0.1 | 11/23/2026 | Initial implementation plan for the approved game framework design. Added a lobby and movement guard at Adam's request: a recorded lobby transcript taken before any engine change (Task 2, Step 0) and checked after Tasks 3, 5, 6 and 9. |
 
 **Goal:** Portal Partners runs as the first game module behind a common hook interface in the World engine, the wire protocol carries any game's targets and state, and every game's results go to one shared Supabase results table. Portal Partners behaves exactly as before.
@@ -312,3 +313,5 @@ Migration contents, in order, all in `private` with the existing pattern (row-le
 - [ ] **Step 3: Engine boundary:** `grep -rn "cloudflare\|supabase\|document\.\|window\.\|from 'node:" shared/world/` prints nothing.
 - [ ] **Step 4: Push and open the pull request** to `dev` (only when Adam asks), listing for Ryan: what changed, the checks run with their results, and Adam's hosted checklist below.
 - [ ] **Step 5: Adam's hosted checklist** (manual, after the pull request is approved; agents do not do these): apply the migration to hosted dev Supabase; check existing results still appear in history with the same `winsTotal`; deploy the dev Worker; with two accounts, walk around the courtyard, see each other move, check the board, and join and leave a room (lobby check); two accounts play one Portal Partners round to a win with the unchanged frontend, and the result appears in both players' history.
+
+**Hosted run (11/24/2026, Adam):** after PR #32 merged into `dev`, the migration `20261124044041_shared_game_results` was applied to hosted dev Supabase and the dev Worker was deployed. The results tables showed the earlier Portal Partners results and a new result from a round played after the deploy.

@@ -15,6 +15,7 @@ import type {
   RoomSummary,
   GameStateBase,
   ServerMessage,
+  SessionSnapshot,
   Vec3,
   WorldSnapshot,
 } from '../contracts';
@@ -97,6 +98,8 @@ interface RoomState {
   startedAt: string | null;
   score: number | null;
   round: Round | null;
+  /** Rounds started in this room so far; the next round's number. */
+  roundsStarted: number;
   /** When `game.state` was last sent to the round's players. */
   lastStateAt: number;
 }
@@ -120,6 +123,11 @@ interface Round {
 }
 
 const STATE_INTERVAL_MS = 1000;
+
+/** Returned by a guarded hook call that threw: the round has already been cancelled with `error`. */
+const ABORTED: unique symbol = Symbol('aborted');
+type Aborted = typeof ABORTED;
+
 /**
  * The platform-free world engine. Callers feed it admitted connections and parsed client
  * messages, then drain the outbox, closings and finished rounds. Time comes only from `now()`.
@@ -245,7 +253,10 @@ export class World {
     const now = this.now();
     for (const room of this.rooms.values()) {
       const round = room.round;
-      if (round?.game.tick) this.applyEffect(room, round.game.tick(round.state, this.roundView(round)), 'other');
+      if (!round?.game.tick) continue;
+      const view = this.roundView(round);
+      const effect = this.guarded(room, 'tick', () => round.game.tick!(round.state, view));
+      if (effect !== ABORTED) this.applyEffect(room, effect, 'other');
     }
     for (let due = this.nextDeadline(now); due; due = this.nextDeadline(now)) due.run();
     for (const room of this.rooms.values()) {
@@ -316,15 +327,23 @@ export class World {
     if (!p.tracker || (room.config && !round)) return;
     let area: MoveArea = COURTYARD_AREA;
     let path: PathCheck | undefined;
+    let aborted = false;
     if (round) {
       // Every character counts for the game, including disconnected ones.
       const { game, state } = round;
       const view = this.roundView(round);
-      area = { bounds: arenaBounds(game), speed: this.speedOf(round, view, p.card.id) };
-      path = (f, t) => game.checkMove(state, view, p.card.id, f, t);
+      const speed = this.speedOf(room, round, view, p.card.id);
+      if (speed === ABORTED) return;
+      area = { bounds: arenaBounds(game), speed };
+      path = (f, t) => {
+        const verdict = this.guarded(room, 'checkMove', () => game.checkMove(state, view, p.card.id, f, t));
+        if (verdict !== ABORTED) return verdict;
+        aborted = true;
+        return 'ignore';
+      };
     }
     const r = checkMove(p.tracker, area, m.sequence, m.position, m.rotation, this.now(), path);
-    if (r.kind === 'stale') return;
+    if (aborted || r.kind === 'stale') return;
     p.tracker = r.tracker;
     if (r.kind === 'ignored') return;
     if (r.kind === 'rejected') {
@@ -360,7 +379,9 @@ export class World {
     );
     if (round?.game.afterMove) {
       // The view now holds the mover's new accepted position.
-      this.applyEffect(room, round.game.afterMove(round.state, this.roundView(round), p.card.id), 'afterMove');
+      const view = this.roundView(round);
+      const effect = this.guarded(room, 'afterMove', () => round.game.afterMove!(round.state, view, p.card.id));
+      if (effect !== ABORTED) this.applyEffect(room, effect, 'afterMove');
     }
   }
 
@@ -381,7 +402,9 @@ export class World {
     const prior = round.actions.get(m.actionId);
     if (prior) return this.replyAction(p, requestId, prior);
 
-    const r = round.game.interact(round.state, this.roundView(round), p.card.id, m.target);
+    const view = this.roundView(round);
+    const r = this.guarded(room, 'interact', () => round.game.interact(round.state, view, p.card.id, m.target));
+    if (r === ABORTED) return { code: 'NOT_IN_GAME', message: 'The round ended because of a game error.' };
     const reply: ActionReply = r.ok ? { ok: true } : { ok: false, code: 'INVALID_ACTION', message: r.message };
     round.actions.set(m.actionId, reply);
     // The reply goes before anything the action causes.
@@ -512,29 +535,49 @@ export class World {
       badScore: null,
       badSpeed: null,
     };
-    round.state = game.start(this.roundView(round));
+    // The room holds the round before `start` runs, so a throwing `start` can cancel it.
     room.round = round;
     room.status = 'playing';
     room.sessionId = sessionId;
     room.startedAt = iso(now);
-    room.score = this.scoreOf(round);
+    const view = this.roundView(round);
+    const roundNumber = room.roundsStarted++;
+    const state = this.guarded(room, 'start', () => game.start(view, roundNumber));
+    if (state === ABORTED) return;
+    round.state = state;
+    const score = this.scoreOf(room, round);
+    if (score === ABORTED) return;
+    room.score = score;
     room.revision++;
-    const snapshot: ServerMessage = { type: 'room.snapshot', payload: this.roomSnapshot(room) };
+    const payload = this.roomSnapshot(room);
+    // The snapshot's `view` threw: the round is already cancelled.
+    if (room.round !== round) return;
+    const snapshot: ServerMessage = { type: 'room.snapshot', payload };
     for (const m of [a, b]) if (m.conn !== null) this.send(m.conn, snapshot);
-    this.sendState(room);
+    if (!this.sendState(room)) return;
     this.broadcastBoard(room);
   }
 
   /**
    * Ends the room's round: tells its connected players (except `except`), records the
    * FinishedRound, and returns the room to waiting with readiness reset and positions cleared.
+   * The score is `fixedScore` when given, otherwise the game's; if `score` throws, the round is
+   * cancelled with `error` instead.
    */
-  private finishRound(room: RoomState, outcome: Outcome, cancelReason: CancelReason | null, except?: string): void {
+  private finishRound(
+    room: RoomState,
+    outcome: Outcome,
+    cancelReason: CancelReason | null,
+    except?: string,
+    fixedScore?: number,
+  ): void {
     const round = room.round!;
+    const score = fixedScore ?? this.scoreOf(room, round, except);
+    if (score === ABORTED) return;
     const result: GameFinished = {
       sessionId: round.sessionId,
       outcome,
-      score: this.scoreOf(round),
+      score,
       persistenceStatus: 'pending',
       ...(cancelReason ? { reason: cancelReason } : {}),
     };
@@ -568,6 +611,29 @@ export class World {
     room.revision++;
     this.announceReset(room, cleared);
     this.broadcastBoard(room);
+  }
+
+  /**
+   * Runs one game module hook for `room`'s round. If it throws, the round is cancelled with
+   * `error` (see `abortRound`) and ABORTED is returned: the caller stops working on that round.
+   */
+  private guarded<T>(room: RoomState, hook: string, fn: () => T, except?: string): T | Aborted {
+    try {
+      return fn();
+    } catch (err) {
+      this.abortRound(room, hook, err, except);
+      return ABORTED;
+    }
+  }
+
+  /**
+   * Reports a throwing hook and cancels the round with `error`. The module's state may be
+   * half-changed, so it is not asked again: the score is the room's last board score.
+   */
+  private abortRound(room: RoomState, hook: string, err: unknown, except?: string): void {
+    const game = room.round!.game;
+    this.onModuleError(`${game.gameType}: ${hook} threw: ${err instanceof Error ? err.message : String(err)}`);
+    this.finishRound(room, 'cancelled', 'error', except, room.score ?? 0);
   }
 
   /** Cancels the round `p` is playing in, if any; `p` is not sent the result. */
@@ -629,11 +695,12 @@ export class World {
       this.finishRound(room, effect.end, null);
       return;
     }
-    const score = this.scoreOf(round);
+    const score = this.scoreOf(room, round);
+    if (score === ABORTED) return;
     const scored = score !== room.score;
     if (effect.stateChanged || scored) {
       if (origin === 'other' && !bumped) room.revision++;
-      this.sendState(room);
+      if (!this.sendState(room)) return;
     }
     if (scored) {
       room.score = score;
@@ -646,17 +713,20 @@ export class World {
     const room = this.roomOf(p);
     const round = room.round;
     if (!round?.game.onConnection || !round.playerIds.includes(p.card.id)) return;
-    this.applyEffect(room, round.game.onConnection(round.state, this.roundView(round), p.card.id, connected), 'other');
+    const view = this.roundView(round);
+    const effect = this.guarded(room, 'onConnection', () => round.game.onConnection!(round.state, view, p.card.id, connected));
+    if (effect !== ABORTED) this.applyEffect(room, effect, 'other');
   }
 
   /**
    * The player's speed from the game, or the arena speed when the game has no `speed` hook or
-   * returns a bad value (not finite or negative: a module bug, reported).
+   * returns a bad value (not finite or negative: a module bug, reported). ABORTED if it threw.
    */
-  private speedOf(round: Round, view: RoundView, playerId: string): number {
+  private speedOf(room: RoomState, round: Round, view: RoundView, playerId: string): number | Aborted {
     const game = round.game;
     if (!game.speed) return game.arena.speed;
-    const raw = game.speed(round.state, view, playerId);
+    const raw = this.guarded(room, 'speed', () => game.speed!(round.state, view, playerId));
+    if (raw === ABORTED) return raw;
     if (Number.isFinite(raw) && raw >= 0) return raw;
     if (!Object.is(raw, round.badSpeed)) {
       round.badSpeed = raw;
@@ -665,10 +735,14 @@ export class World {
     return game.arena.speed;
   }
 
-  /** The game's score clamped to `0..scoreMax`; an out-of-range score is a module bug, reported. */
-  private scoreOf(round: Round): number {
+  /**
+   * The game's score clamped to `0..scoreMax`; an out-of-range score is a module bug, reported.
+   * ABORTED if `score` threw (`except` is passed on to the cancel).
+   */
+  private scoreOf(room: RoomState, round: Round, except?: string): number | Aborted {
     const game = round.game;
-    const raw = game.score(round.state);
+    const raw = this.guarded(room, 'score', () => game.score(round.state), except);
+    if (raw === ABORTED) return raw;
     if (Number.isFinite(raw) && raw >= 0 && raw <= game.scoreMax) return raw;
     if (!Object.is(raw, round.badScore)) {
       round.badScore = raw;
@@ -702,18 +776,22 @@ export class World {
     return this.config.roundMs ?? room.config!.game.roundMs;
   }
 
-  private sendState(room: RoomState): void {
+  /** Sends `game.state` to the round's players; false (nothing sent) if `view` threw. */
+  private sendState(room: RoomState): boolean {
     const round = room.round!;
-    const now = this.now();
-    room.lastStateAt = now;
+    const state = this.gameState(room);
+    if (state === ABORTED) return false;
+    room.lastStateAt = this.now();
     const message: ServerMessage = {
       type: 'game.state',
-      payload: { sessionId: round.sessionId, revision: room.revision, gameType: round.game.gameType, state: this.gameState(room) },
+      // Each module's `view` matches the state type its `gameType` names in the contract.
+      payload: { sessionId: round.sessionId, revision: room.revision, gameType: round.game.gameType, state } as GameStatePayload,
     };
     for (const id of round.playerIds) {
       const m = this.players.get(id);
       if (m?.conn) this.send(m.conn, message);
     }
+    return true;
   }
 
   // ---- deadlines ----
@@ -788,18 +866,23 @@ export class World {
       startedAt: null,
       score: null,
       round: null,
+      roundsStarted: 0,
       lastStateAt: 0,
     };
   }
 
-  private gameState(room: RoomState): GameStatePayload['state'] {
+  /** The round's full game state, or ABORTED if `view` threw. */
+  private gameState(room: RoomState): GameStatePayload['state'] | Aborted {
     const round = room.round!;
-    return {
-      ...(round.game.view(round.state, this.roundView(round)) as Omit<GameStatePayload['state'], keyof GameStateBase>),
+    const view = this.roundView(round);
+    const fields = this.guarded(room, 'view', () => round.game.view(round.state, view));
+    if (fields === ABORTED) return fields;
+    const base: GameStateBase = {
       startedAt: room.startedAt!,
       durationSeconds: Math.round(this.roundMsOf(room) / 1000),
       serverTime: iso(this.now()),
     };
+    return { ...fields, ...base } as GameStatePayload['state'];
   }
 
   private lobby(): RoomState {
@@ -863,12 +946,17 @@ export class World {
     return this.config.rooms.map((rc) => this.summary(this.rooms.get(rc.id)!));
   }
 
+  /** The room as it is now; if the round's `view` throws, the round is cancelled first. */
   private roomSnapshot(room: RoomState): RoomSnapshot {
+    const round = room.round;
+    // The game state comes first, so a throwing `view` cancels the round before anything is built.
+    const state = round ? this.gameState(room) : null;
+    if (state === ABORTED) return this.roomSnapshot(room);
     return {
       roomId: room.id,
       summary: room.config ? this.summary(room) : null,
       players: this.members(room).map(presence),
-      session: room.round ? { sessionId: room.round.sessionId, gameType: room.round.game.gameType, ...this.gameState(room) } : null,
+      session: round && state ? ({ sessionId: round.sessionId, gameType: round.game.gameType, ...state } as SessionSnapshot) : null,
       revision: room.revision,
     };
   }

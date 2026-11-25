@@ -2,7 +2,7 @@
 
 **Version:** 0.4
 
-**Date:** 11/22/2026
+**Date:** 11/23/2026
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
@@ -20,7 +20,7 @@ Labels used below: **Decided** means Adam decided it in brainstorming on 11/17/2
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.4 | 11/23/2026 | Added a note at §7 that the game framework design supersedes it for results storage (one shared results table and `record_game_result`). Nothing else changed. |
+| 0.4 | 11/24/2026 | Formatting only: header date now matches the latest history entry. On 11/23/2026 (0.4): added a note at §7 that the game framework design supersedes it for results storage (one shared results table and `record_game_result`). Nothing else changed. |
 | 0.3 | 11/22/2026 | Status updated: merged in PR #22, with a link to the plan. Added a scope note: the other four games are now release scope and need their own designs on this runtime, with pointers in §1, §2, and §12. The design itself is unchanged. |
 | 0.2 | 11/18/2026 | After the whole-branch review: §8.2 table now matches the built wire shapes (`world.snapshot`, `room.snapshot`, `player.left` reasons) and gains client notes on missed outcomes, late `failed` results, and close codes; §5.2 says a key set that never loaded gives `SERVICE_UNAVAILABLE`, and the client reports why a connection closed (`closeReason`); §7.3 notes that a permanently rejected result keeps retrying every 10 minutes; §12 renumbered, with a new item on spawn facing at round start. |
 | 0.1 | 11/17/2026 | Initial runtime design: one World Durable Object, position-based movement, 20-second reconnect grace, Portal Partners as the first networked game, and results (including cancellations) in Supabase. After review: a capped movement allowance, asymmetric local signing keys, and players on a closing bridge sent back to the side they came from. Added token-verification hardening, a cap on connections awaiting sign-in, sign-out handling, and the no-card Cloudflare account note; deferred the load check to integration testing. |

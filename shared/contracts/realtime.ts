@@ -1,14 +1,14 @@
 import type { AvatarId, ErrorCode, Result } from './types';
 
 export type Vec3 = { x: number; y: number; z: number };
-export type RoomId = string; // 'lobby' | 'portal' in this release
-export const GAME_TYPES = ['portal-partners'] as const;
+export type RoomId = string; // 'lobby' | 'portal' | 'workshop' in this release
+export const GAME_TYPES = ['portal-partners', 'power-up-workshop'] as const;
 export type GameType = (typeof GAME_TYPES)[number];
 /** Interaction targets are opaque ids; each game module decides which ones it accepts. */
 export const TARGET_PATTERN = /^[A-Za-z0-9-]{1,32}$/;
 export type PortalPartnersTarget = 'lever' | 'crystal-a' | 'crystal-b' | 'exit';
 export type Outcome = 'win' | 'loss' | 'cancelled';
-export type CancelReason = 'left' | 'disconnected';
+export type CancelReason = 'left' | 'disconnected' | 'error';
 export type PersistenceStatus = 'pending' | 'saved' | 'failed';
 export type CorrectionReason = 'rejected' | 'bridgeClosed';
 
@@ -47,9 +47,29 @@ export interface PortalPartnersState extends GameStateBase {
   latched: boolean;
   crystals: [boolean, boolean];
 }
+export type PowerUpWorkshopTarget =
+  | 'gear-0' | 'gear-1' | 'gear-2' | 'cable-0' | 'cable-1' | 'cable-2'
+  | 'socket-0' | 'socket-1' | 'socket-2' | 'power-right';
+export const POWER_UP_WORKSHOP_TARGETS: readonly PowerUpWorkshopTarget[] = [
+  'gear-0', 'gear-1', 'gear-2', 'cable-0', 'cable-1', 'cable-2',
+  'socket-0', 'socket-1', 'socket-2', 'power-right',
+];
+export interface PowerUpWorkshopState extends GameStateBase {
+  level: number; // 1..5
+  gears: [number, number, number]; // 0..3
+  gearTargets: [number, number, number]; // 1..3
+  sockets: [boolean, boolean, boolean];
+  socketCables: [number, number, number]; // 0 = A, 1 = B, 2 = C
+  held: [number | null, number | null]; // join order
+  mistakes: number;
+}
 /** One member per game; each game adds its own. */
-export type GameStatePayload = { sessionId: string; revision: number; gameType: 'portal-partners'; state: PortalPartnersState };
-export type SessionSnapshot = { sessionId: string; gameType: 'portal-partners' } & PortalPartnersState;
+export type GameStatePayload =
+  | { sessionId: string; revision: number; gameType: 'portal-partners'; state: PortalPartnersState }
+  | { sessionId: string; revision: number; gameType: 'power-up-workshop'; state: PowerUpWorkshopState };
+export type SessionSnapshot =
+  | ({ sessionId: string; gameType: 'portal-partners' } & PortalPartnersState)
+  | ({ sessionId: string; gameType: 'power-up-workshop' } & PowerUpWorkshopState);
 export interface GameFinished {
   sessionId: string;
   outcome: Outcome;

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { admit, card, conn, ENTRANCE, join, leave, LOBBY_SPAWN, makeWorld, move, walk } from './test-helpers';
+import { DEFAULT_WORLD_CONFIG, PORTAL_ROOM } from './config';
 import type { Outgoing } from './world';
 
 describe('lobby transcript', () => {
   it('lobby transcript is unchanged', () => {
-    const tw = makeWorld();
+    // The recorded transcript predates the workshop room; its board lists only the portal.
+    const tw = makeWorld({ ...DEFAULT_WORLD_CONFIG, rooms: [PORTAL_ROOM] });
     const log: unknown[] = [];
     const record = (step: string) => {
       tw.world.advance();

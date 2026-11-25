@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ServerMessage, Vec3 } from '../contracts';
+import type { PortalPartnersState, ServerMessage, Vec3 } from '../contracts';
 import { DEFAULT_WORLD_CONFIG } from './config';
 import {
   admit,
@@ -45,6 +45,12 @@ function startGame(count = 2, config?: Parameters<typeof setup>[2]): Game {
   const sid = state[0]!.payload.sessionId;
   tw.clear();
   return { tw, sid, t0: tw.now() };
+}
+
+/** A `game.state` message's Portal Partners state. */
+function ppState(m: Extract<ServerMessage, { type: 'game.state' }>): PortalPartnersState {
+  if (m.payload.gameType !== 'portal-partners') throw new Error('not a Portal Partners state');
+  return m.payload.state;
 }
 
 function snapshotOf(msgs: ServerMessage[]) {
@@ -198,7 +204,7 @@ describe('World rounds', () => {
     expect(only(tw.messagesFor(conn(3)), 'game.state')).toEqual([]);
     const s = only(tw.messagesFor(conn(1)), 'game.state');
     expect(s).toHaveLength(1);
-    expect(s[0]!.payload.state.crystals).toEqual([false, true]);
+    expect(ppState(s[0]!).crystals).toEqual([false, true]);
   });
 
   it('game.state and the session snapshot carry gameType', () => {
@@ -363,7 +369,7 @@ describe('World rounds', () => {
     tw.world.advance();
     const states = only(tw.messagesFor(conn(1)), 'game.state');
     expect(states.length).toBeGreaterThan(0);
-    expect(states[states.length - 1]!.payload.state.crystals).toEqual([false, false]);
+    expect(ppState(states[states.length - 1]!).crystals).toEqual([false, false]);
   });
 
   it('bridge closes under a player', () => {
@@ -396,7 +402,7 @@ describe('World rounds', () => {
       expect(upd).toHaveLength(1);
       expect(upd[0]!.payload).toMatchObject({ playerId: 'p2', position: setBackPos, rotation: 0.3 });
       // A periodic game.state may come first (from advance()); the change is sent after the move.
-      const st = only(m1, 'game.state').map((m) => m.payload.state.bridgeOpen);
+      const st = only(m1, 'game.state').map((m) => ppState(m).bridgeOpen);
       expect(st[st.length - 1]).toBe(false);
       expect(st.slice(0, -1).every((open) => open)).toBe(true);
       expect(only(m1, 'game.state').pop()!.payload.sessionId).toBe(sid);

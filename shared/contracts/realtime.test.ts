@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ERROR_CODES } from './types';
-import { parseClientMessage, type ClientMessage } from './realtime';
+import { GAME_TYPES, parseClientMessage, POWER_UP_WORKSHOP_TARGETS, type ClientMessage } from './realtime';
 
 const pos = { x: 1, y: 0, z: -2 };
 const samples: ClientMessage[] = [
@@ -43,6 +43,21 @@ describe('parseClientMessage', () => {
       expect(r.error).toBeNull();
       expect(r.data).toEqual({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target } });
     }
+  });
+
+  it('accepts every Power-Up Workshop target', () => {
+    expect(POWER_UP_WORKSHOP_TARGETS).toHaveLength(10);
+    for (const target of POWER_UP_WORKSHOP_TARGETS) {
+      const r = parseClientMessage(
+        JSON.stringify({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target } }),
+      );
+      expect(r.error).toBeNull();
+      expect(r.data).toEqual({ type: 'game.interact', requestId: 'a', payload: { sessionId: 's', actionId: 'x', target } });
+    }
+  });
+
+  it('lists both game types', () => {
+    expect(GAME_TYPES).toEqual(['portal-partners', 'power-up-workshop']);
   });
 
   it('rejects targets outside the target rule', () => {

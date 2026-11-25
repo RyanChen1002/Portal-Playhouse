@@ -22,7 +22,7 @@ function viewOf(a: Vec3, b: Vec3, connected: [boolean, boolean] = [true, true]):
   };
 }
 
-const fresh = (): PPState => M.start(viewOf(v(-3, 6), v(0, 6)));
+const fresh = (): PPState => M.start(viewOf(v(-3, 6), v(0, 6)), 0);
 const far = v(0, 6);
 
 describe('Portal Partners module', () => {

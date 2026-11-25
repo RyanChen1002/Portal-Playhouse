@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { CorrectionReason } from '../contracts';
-import { admit, boards, card, conn, interact, move, only } from './test-helpers';
-import { testWorld } from './test-game';
+import { admit, boards, card, conn, interact, join, leave, move, only, ready } from './test-helpers';
+import { setThrowOnStart, testWorld, type TestRound } from './test-game';
 
 const PUSHED = 'pushed' as CorrectionReason;
 const SPAWN_1 = { x: -1, y: 0, z: 0 };
@@ -241,5 +241,181 @@ describe('game module hooks', () => {
     const second = only(tw.messagesFor(conn(1)), 'game.state');
     expect(second).toHaveLength(1);
     expect(second[0]!.payload.revision).toBe(first[0]!.payload.revision + 1);
+  });
+});
+
+describe('hook exceptions', () => {
+  afterEach(() => setThrowOnStart(false));
+
+  /** The round was cancelled with `error` for each connected player in `players`, once, and reported once. */
+  function expectErrorCancel({ tw, errors }: TestRound, hook: string, players = [1, 2]): void {
+    for (const n of players) {
+      const msgs = tw.messagesFor(conn(n));
+      expect(only(msgs, 'game.finished').map((m) => [m.payload.outcome, m.payload.reason])).toEqual([['cancelled', 'error']]);
+      expect(boards(msgs).pop()).toMatchObject({ id: 'test', status: 'waiting', sessionId: null, score: null });
+    }
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'cancelled', cancelReason: 'error' }]);
+    expect(errors).toEqual([`test-game: ${hook} threw: boom`]);
+  }
+
+  const triggers: Record<string, (r: TestRound) => number[] | void> = {
+    checkMove: ({ tw }) => {
+      tw.advanceBy(100);
+      move(tw, 1, { x: -0.6, y: 0, z: 0 });
+    },
+    speed: ({ tw }) => {
+      tw.advanceBy(100);
+      move(tw, 1, { x: -0.6, y: 0, z: 0 });
+    },
+    afterMove: ({ tw }) => {
+      tw.advanceBy(100);
+      move(tw, 1, { x: -0.6, y: 0, z: 0 });
+    },
+    interact: ({ tw, sid }) => interact(tw, 1, sid, 'push'),
+    tick: ({ tw }) => {
+      tw.advanceBy(100);
+      tw.world.advance();
+    },
+    onConnection: ({ tw }) => {
+      tw.world.connectionLost(conn(2));
+      return [1];
+    },
+    view: ({ tw, state }) => {
+      state.nextTick = { stateChanged: true };
+      tw.world.advance();
+    },
+    score: ({ tw, sid }) => interact(tw, 1, sid, 'push'),
+  };
+
+  it.each(['checkMove', 'speed', 'afterMove', 'interact', 'tick', 'onConnection', 'view', 'score'])(
+    '%s throwing cancels the round with error',
+    (hook) => {
+      const r = testWorld();
+      r.state.throwIn = hook;
+      const players = triggers[hook]!(r) ?? [1, 2];
+      expectErrorCancel(r, hook, players);
+    },
+  );
+
+  it('start receives the room round number', () => {
+    const { tw, sid, started } = testWorld({}, { extraRoom: true });
+    const sidOf = (n: number) => only(tw.messagesFor(conn(n)), 'room.snapshot').pop()!.payload.session!.sessionId;
+    let current = sid;
+    for (let i = 0; i < 2; i++) {
+      started.test[i]!.interactResult = { ok: true, effect: { end: 'win' } };
+      interact(tw, 1, current, 'win');
+      tw.clear();
+      ready(tw, 1);
+      ready(tw, 2);
+      current = sidOf(1);
+    }
+    expect(started.test.map((s) => s.roundNumber)).toEqual([0, 1, 2]);
+    expect(started.test2.map((s) => s.roundNumber)).toEqual([0]);
+
+    // A cancelled round still counts.
+    leave(tw, 1);
+    tw.clear();
+    join(tw, 1, 'test');
+    ready(tw, 1);
+    ready(tw, 2);
+    expect(started.test.map((s) => s.roundNumber)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('start throwing cancels the round with error', () => {
+    const r = testWorld();
+    const { tw, sid, state } = r;
+    state.interactResult = { ok: true, effect: { end: 'loss' } };
+    interact(tw, 1, sid, 'push');
+    tw.world.takeFinishedRounds();
+    tw.clear();
+
+    setThrowOnStart(true);
+    ready(tw, 1);
+    ready(tw, 2);
+    const m1 = tw.messagesFor(conn(1));
+    const m2 = tw.messagesFor(conn(2));
+    expect([...only(m1, 'game.state'), ...only(m2, 'game.state')]).toEqual([]);
+    for (const msgs of [m1, m2]) {
+      expect(only(msgs, 'game.finished').map((m) => [m.payload.outcome, m.payload.reason, m.payload.score])).toEqual([
+        ['cancelled', 'error', 0],
+      ]);
+      expect(boards(msgs).pop()).toMatchObject({ id: 'test', status: 'waiting', sessionId: null });
+    }
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'cancelled', cancelReason: 'error', score: 0 }]);
+    expect(r.errors).toEqual(['test-game: start threw: boom']);
+
+    // The room is consistent: the players can ready up and play again.
+    setThrowOnStart(false);
+    ready(tw, 1);
+    ready(tw, 2);
+    expect(only(tw.messagesFor(conn(1)), 'game.state')).toHaveLength(1);
+  });
+
+  it('interact throwing replies NOT_IN_GAME', () => {
+    const { tw, sid, state } = testWorld();
+    state.throwIn = 'interact';
+    interact(tw, 1, sid, 'push', 'x1');
+    expect(only(tw.messagesFor(conn(1)), 'request.error')).toEqual([
+      {
+        type: 'request.error',
+        requestId: 'i-x1',
+        error: { code: 'NOT_IN_GAME', message: 'The round ended because of a game error.' },
+      },
+    ]);
+  });
+
+  it('a throw cancels only its own room', () => {
+    const { tw, sid, state, errors } = testWorld({}, { extraRoom: true });
+    for (const n of [5, 6]) expect(admit(tw, n).error).toBeNull();
+    tw.clear();
+
+    state.throwIn = 'tick';
+    tw.advanceBy(100);
+    // Player 5's move runs the pass in which room `test` throws.
+    const seq = move(tw, 5, { x: 0, y: 0, z: 4.3 });
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ sessionId: sid, cancelReason: 'error' }]);
+    expect(errors).toEqual(['test-game: tick threw: boom']);
+    expect(only(tw.messagesFor(conn(5)), 'player.corrected')).toEqual([]);
+    expect(only(tw.messagesFor(conn(6)), 'player.updated').map((m) => [m.payload.playerId, m.payload.sequence])).toEqual([
+      ['p5', seq],
+    ]);
+    for (const n of [3, 4]) {
+      const msgs = tw.messagesFor(conn(n));
+      expect(only(msgs, 'game.finished')).toEqual([]);
+      expect(boards(msgs).filter((b) => b.id === 'test2')).toEqual([]);
+    }
+
+    // test2's round keeps running and gets its next game.state; the lobby keeps flowing.
+    tw.advanceBy(1000);
+    tw.world.advance();
+    for (const n of [3, 4]) expect(only(tw.messagesFor(conn(n)), 'game.state')).toHaveLength(1);
+    const seq2 = move(tw, 5, { x: 0, y: 0, z: 4.6 });
+    expect(only(tw.messagesFor(conn(6)), 'player.updated').map((m) => m.payload.sequence)).toEqual([seq2]);
+    expect(tw.world.takeFinishedRounds()).toEqual([]);
+  });
+
+  it('score throwing at a win records one cancelled round', () => {
+    const { tw, sid, state, errors } = testWorld();
+    state.interactResult = { ok: true, effect: { end: 'win' } };
+    state.throwIn = 'score';
+    interact(tw, 1, sid, 'win');
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ sessionId: sid, outcome: 'cancelled', cancelReason: 'error' }]);
+    for (const n of [1, 2]) {
+      expect(only(tw.messagesFor(conn(n)), 'game.finished').map((m) => m.payload.outcome)).toEqual(['cancelled']);
+    }
+    expect(errors).toEqual(['test-game: score threw: boom']);
+  });
+
+  it('the cancelled score is the last board score', () => {
+    const { tw, sid, state } = testWorld();
+    state.score = 2;
+    interact(tw, 1, sid, 'push');
+    tw.clear();
+    state.throwIn = 'tick';
+    tw.world.advance();
+    for (const n of [1, 2]) {
+      expect(only(tw.messagesFor(conn(n)), 'game.finished').map((m) => m.payload.score)).toEqual([2]);
+    }
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ cancelReason: 'error', score: 2 }]);
   });
 });

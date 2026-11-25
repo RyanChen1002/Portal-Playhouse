@@ -5,6 +5,7 @@ import { GAMES } from './index';
 describe('game registration', () => {
   it('registers exactly the contract game types', () => {
     expect(GAMES.map((g) => g.gameType).sort()).toEqual([...GAME_TYPES].sort());
+    expect(GAMES.map((g) => g.gameType).sort()).toEqual(['portal-partners', 'power-up-workshop']);
   });
 
   it('every module target is a valid interaction target', () => {
