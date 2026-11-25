@@ -1,12 +1,14 @@
 # Power-Up Workshop Design: Real-Time Rules on the Game Framework
 
-**Version:** 0.1
+**Version:** 0.2
 
 **Date:** 11/24/2026
 
 **Author:** Adam (backend lead), drafted with Claude Code using Superpowers brainstorming
 
-**Status:** Draft for review.
+**Status:** Approved by Adam on 11/24/2026. Ryan reviews the items in §10 in the pull request.
+
+**Plan:** [Power-Up Workshop plan](../plans/2026-11-24-power-up-workshop.md).
 
 **Implements:** [initial spec](../initial-spec.md) §8 blocker "server designs for the other four games" for Power-Up Workshop; FR-06 to FR-09 and AC-03 to AC-06 for this game. **Builds on:** [game framework design](2026-11-23-game-framework-design.md) (the module interface, wire protocol and shared results table) and the [runtime design](2026-11-17-runtime-transport-design.md). **Interfaces:** [component contract](../component-contract.md) §3, §5, §7. **Game source:** the practice version in `frontend/games/rules.js` and `frontend/games/practice.js`, and the [game ideas](../mini-game-ideas.md) §5.
 
@@ -16,7 +18,7 @@ Labels: **Decided** means Adam decided it in brainstorming on 11/24/2026. **Prop
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.1 | 11/24/2026 | Initial design: Power-Up Workshop as the second game module; either player can do any step; the five practice combinations rotate round by round; hook exceptions are contained before this module is added. |
+| 0.2 | 11/24/2026 | Adam approved the design; linked the plan. Earlier the same day (0.1): initial design: Power-Up Workshop as the second game module; either player can do any step; the five practice combinations rotate round by round; hook exceptions are contained before this module is added. |
 
 ## 1. Intent
 
