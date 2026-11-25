@@ -79,6 +79,7 @@ const clone = <T>(x: T): T => structuredClone(x);
 
 /** The room session a `game.state` describes, narrowed on its game type. */
 function sessionOf(p: GameStatePayload): SessionSnapshot {
+  // The branches are identical; they exist only so TypeScript narrows the discriminated union.
   return p.gameType === 'portal-partners'
     ? { sessionId: p.sessionId, gameType: p.gameType, ...clone(p.state) }
     : { sessionId: p.sessionId, gameType: p.gameType, ...clone(p.state) };

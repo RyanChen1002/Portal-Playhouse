@@ -143,6 +143,24 @@ describe('Power-Up Workshop in the world', () => {
     expect(rounds[0]).toMatchObject({ outcome: 'win', score: 6, gameType: 'power-up-workshop', sessionId: r.sid });
   });
 
+  it('a timeout at 180 s is a loss carrying the score at that moment', () => {
+    const r = startWorkshop();
+    const cable = r.state.socketCables[0]!;
+    goTo(r, 1, CABLE_POINTS[cable]!);
+    use(r, 1, `cable-${cable}`);
+    goTo(r, 1, SOCKET_POINTS[0]!);
+    expect(lastReply(use(r, 1, 'socket-0'))?.type).toBe('request.accepted');
+    r.tw.clear();
+    r.tw.advanceBy(180_001);
+    r.tw.world.advance();
+    const fin = only(r.tw.messagesFor(conn(1)), 'game.finished');
+    expect(fin).toHaveLength(1);
+    expect(fin[0]!.payload).toMatchObject({ outcome: 'loss', score: 1 });
+    const rounds = r.tw.world.takeFinishedRounds();
+    expect(rounds).toHaveLength(1);
+    expect(rounds[0]).toMatchObject({ outcome: 'loss', score: 1, gameType: 'power-up-workshop', sessionId: r.sid });
+  });
+
   it('a repeated actionId on a gear press turns the gear once (Review Focus 3)', () => {
     const r = startWorkshop();
     goTo(r, 1, GEAR_POINTS[0]!);

@@ -87,10 +87,6 @@ describe('Power-Up Workshop module', () => {
     expect(!r.ok && r.message === 'Move closer to interact.').toBe(false);
   });
 
-  it('rejects an unknown target', () => {
-    expect(msg(M.interact(fresh(), near('gear-0'), 'a', 'power-left'))).toBe('Move closer to interact.');
-  });
-
   it('gear turns 0,1,2,3,0 and a turn past a match lowers the score', () => {
     const s = fresh(); // level 1 targets 1,2,3
     const view = near('gear-0');

@@ -48,6 +48,7 @@ function targetPoint(target: string): { x: number; z: number } | null {
     const i = Number(m[2]);
     return (m[1] === 'gear' ? GEAR_POINTS : m[1] === 'socket' ? SOCKET_POINTS : CABLE_POINTS)[i]!;
   }
+  // Defensive fallback: the engine rejects targets outside `targets` before calling the module, so null is never reached.
   return target === 'power-right' ? POWER_RIGHT : null;
 }
 
