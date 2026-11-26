@@ -7,7 +7,7 @@ export const palettes = {
     secondary: "#ef997d",
     wall: "#eee5f8",
     floor: "#e9e0f3",
-    sky: "#e4ddf0",
+    sky: "#dce8df",
     metal: "#655d84",
   },
   cafe: {
@@ -15,7 +15,7 @@ export const palettes = {
     secondary: "#9cba9e",
     wall: "#f5e7d5",
     floor: "#edddc8",
-    sky: "#eee2d3",
+    sky: "#dce8df",
     metal: "#77594e",
   },
   rescue: {
@@ -23,7 +23,7 @@ export const palettes = {
     secondary: "#edaa84",
     wall: "#efe4ec",
     floor: "#e8d9e3",
-    sky: "#e8dfe9",
+    sky: "#dce8df",
     metal: "#80687e",
   },
   train: {
@@ -31,7 +31,7 @@ export const palettes = {
     secondary: "#f1c566",
     wall: "#e2eef0",
     floor: "#dce9e7",
-    sky: "#dce8eb",
+    sky: "#dce8df",
     metal: "#567780",
   },
   workshop: {
@@ -39,10 +39,40 @@ export const palettes = {
     secondary: "#e7aa65",
     wall: "#e1e9e7",
     floor: "#d9e2df",
-    sky: "#dae3e1",
+    sky: "#dce8df",
     metal: "#415860",
   },
 };
+export function roomFurnitureSpec(id) {
+  const specs = {
+    portal: {
+      id,
+      label: "Bridge console and crystal display",
+      furniture: ["bridgeConsole", "crystalPedestal", "exitArch"],
+    },
+    cafe: {
+      id,
+      label: "Cafe counter and serving shelves",
+      furniture: ["prepCounter", "stove", "servingShelf"],
+    },
+    rescue: {
+      id,
+      label: "Lounge sofa and delivery furniture",
+      furniture: ["sofa", "coffeeTable", "deliveryCabinet"],
+    },
+    train: {
+      id,
+      label: "Station benches and track rack",
+      furniture: ["stationBench", "trackRack", "platformLamp"],
+    },
+    workshop: {
+      id,
+      label: "Workbench and tool cabinet",
+      furniture: ["workbench", "toolCabinet", "statusPanel"],
+    },
+  };
+  return specs[id] || null;
+}
 export function furnishRoom(scene, id) {
   const palette = palettes[id],
     materials = new Map();
@@ -253,4 +283,31 @@ export function furnishRoom(scene, id) {
   );
   sign.position.set(0, 4.9, -8.5);
   scene.add(sign);
+
+  // Per-game visual furniture reinforces identity without entering gameplay bounds.
+  const spec = roomFurnitureSpec(id);
+  if (!spec) return;
+  if (id === "portal") {
+    rounded(-8.4, 0.75, 4.8, 2.4, 1.5, 1.1, "#af9ed2", 0.12);
+    cylinder(8.4, 0.55, 4.8, 0.75, 1.1, "#7696b0");
+    cube(8.4, 1.55, 4.8, 1.4, 0.12, 0.8, "#d9e2d2");
+  } else if (id === "cafe") {
+    rounded(-8.2, 0.9, 5.7, 2.8, 1.8, 1.2, "#c59572", 0.14);
+    for (let i = 0; i < 3; i++)
+      cylinder(-8.2 + i * 0.8 - 0.8, 1.85, 5.7, 0.38, 0.08, "#fff3db");
+    rounded(8.1, 0.85, 5.8, 2.5, 1.7, 1.1, "#93aa91", 0.14);
+  } else if (id === "rescue") {
+    rounded(-8.2, 0.75, 5.2, 2.8, 1.5, 1.4, "#c49f8d", 0.16);
+    rounded(8.2, 0.55, 5.2, 2.2, 1.1, 1.4, "#a9bca9", 0.14);
+    cube(8.2, 1.22, 5.2, 2.0, 0.14, 1.2, "#e8dbc7");
+  } else if (id === "train") {
+    rounded(-8.2, 0.72, 5.2, 2.8, 1.44, 1.1, "#b39a72", 0.13);
+    cube(8.2, 0.52, 5.3, 2.2, 1.04, 0.9, "#718b7e");
+    cylinder(8.2, 1.45, 5.3, 0.22, 1.7, "#526d63");
+  } else if (id === "workshop") {
+    rounded(-8.2, 0.82, 5.2, 2.8, 1.64, 1.2, "#819b92", 0.12);
+    for (let i = 0; i < 4; i++)
+      cube(-8.9 + i * 0.45, 1.72, 5.2, 0.28, 0.28, 0.28, i % 2 ? "#ddb765" : "#9ac1be");
+    rounded(8.2, 0.65, 5.2, 2.2, 1.3, 1.1, "#5e7d82", 0.12);
+  }
 }

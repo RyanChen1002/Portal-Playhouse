@@ -1,6 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as authUi from './auth.js';
 import { authenticate } from './auth.js';
+
+test('welcome flow starts with online sign-in and keeps practice secondary', () => {
+  const view = authUi.welcomeView?.() ?? {};
+  assert.equal(view.primaryAction, 'signin');
+  assert.equal(view.modeLabel, 'Use offline practice instead');
+  assert.equal(authUi.welcomeView?.({ online: false })?.primaryAction, 'practice');
+  assert.equal(authUi.welcomeView?.({ online: true, registering: true })?.primaryAction, 'signup');
+});
+
+test('successful authentication notifies the welcome flow through a shared event', () => {
+  const target = new EventTarget();
+  let notified = false;
+  target.addEventListener('playhouse-authenticated', () => { notified = true; });
+  authUi.notifyAuthenticated?.(target);
+  assert.equal(notified, true);
+});
 
 test('registration passes the three contract fields and returns the server profile', async () => {
   const profile = { id: 'player', displayName: 'Player-123', avatarId: 'avatar-01' };
