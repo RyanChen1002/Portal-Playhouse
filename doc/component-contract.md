@@ -1,8 +1,8 @@
 # Portal Playhouse — Initial Component Contract
 
-**Version:** 0.13
+**Version:** 0.14
 
-**Date:** 11/24/2026
+**Date:** 11/27/2026
 
 **Project option:** A — Contract-first build with midpoint swap
 
@@ -10,6 +10,7 @@
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.14 | 11/27/2026 | Shared rules from the [five-game design](specs/five-game-design.md#shared-rules) v0.3: every `game.state` gains `winHeldAt` (§5). No round is won while a player is disconnected; the win is held until both are back (§6, disconnects). A Power-Up Workshop wrong cable is an accepted mistake, and its state gains `feedback` (§5). **These contract changes need Ryan's approval in the pull request.** |
 | 0.13 | 11/24/2026 | Power-Up Workshop ([design](specs/2026-11-24-power-up-workshop-design.md) §4–§6): `power-up-workshop` joins the game types and `Result.cancelReason` gains `error` (§3); the Power-Up Workshop state and targets are added by pointing to the design (§5); §7 notes that `error` cancels are saved and never a win; §6 and the intro name Power-Up Workshop as defined and Playhouse Cafe, Room Rescue and Tiny Train Team as still open. **These contract changes need Ryan's approval in the pull request.** |
 | 0.12 | 11/23/2026 | After the final review: in a game room, an unknown `game.interact` target gets `VALIDATION_ERROR` (outside a game room the reply stays `NOT_IN_GAME`) (§5); the §7 Details link now points to the framework design §7. Earlier the same day (0.11): Ryan approved the [game framework design](specs/2026-11-23-game-framework-design.md): `gameType` is a game type from a list on `RoomSummary` and `Result`, replacing "Game types (open)" (§3); `game.interact` targets are checked by the server against the room's game, `game.state` and `room.snapshot.session` carry `gameType`, and `player.corrected.reason` may be game-declared (§5); one shared results table keyed by game type replaces one table per game (§7); removed the result schemas from the §9 open decisions. Earlier the same day (0.10): frontend approach confirmed by Ryan: static ES modules, with esbuild bundling the shared client; no frontend framework (§1, §2); removed it from the §9 open decisions. |
 | 0.9 | 11/22/2026 | **Scope change** ([initial spec](initial-spec.md) v0.7): all five games are now first-release scope and playable in real time, so the other four games join the contract, with their interfaces open until their designs are approved (§3, §5–§7). Removed "tentative until Ryan approves" wording, because the runtime design merged in PR #22. Updated §8 to say the shared code also covers the real-time interface. Removed version labels such as "(v0.7)" and "Proposed v0.4" from the body, because those items are merged (PR #18, PR #22); **Proposed** now marks only items not yet agreed. Portal Partners interface unchanged. |
@@ -123,16 +124,16 @@ WebSocket to the World Durable Object ([runtime design](specs/2026-11-17-runtime
 | Backend -> location | `player.ready {playerId, ready, revision}` | Readiness changes in a waiting room |
 | Backend -> client | `player.corrected {sequence, position, rotation, reason}` | `reason`: `rejected` (a move was refused) or a game-declared reason (Portal Partners: `bridgeClosed`, sent back off a closing bridge). Not an error and does not close the connection |
 | Backend -> all admitted | `room.updated {room}` | Board: availability, participants, score, and timing without spectator access |
-| Backend -> participants | `game.state {sessionId, gameType, revision, state}` | Portal Partners state: `bridgeOpen`, `latched`, `crystals`, `startedAt`, `durationSeconds`, `serverTime`. Other games define their own fields (below) |
+| Backend -> participants | `game.state {sessionId, gameType, revision, state}` | Portal Partners state: `bridgeOpen`, `latched`, `crystals`, `startedAt`, `durationSeconds`, `serverTime`, `winHeldAt`. Other games define their own fields (below). `winHeldAt` is the time a win was held (§6, disconnects), otherwise `null` |
 | Backend -> participants | `game.finished {sessionId, outcome, score, persistenceStatus, reason?}` | `outcome`: `win`, `loss`, or `cancelled`; persistence pending/saved/failed. A cancellation reports `pending` first, not `notApplicable` |
 | Backend -> participants | `result.saved {sessionId, resultId}` | Confirm persistence after retry/pending state |
 | Backend -> client | `session.replaced {}` | Sent to an older connection before it is closed |
 
 Errors: the existing codes in §4 plus NOT_IN_GAME, INVALID_ACTION, and GAME_NOT_READY (readying outside a waiting room), all now adopted; they are added to `shared/contracts/`. `SERVICE_UNAVAILABLE` is also returned when a connection cannot be admitted (for example, Supabase unreachable or too many connections awaiting sign-in).
 
-**Power-Up Workshop:** targets `gear-0` to `gear-2`, `socket-0` to `socket-2`, `cable-0` to `cable-2`, and `power-right`; the `game.state` fields and no correction reasons are in the [Power-Up Workshop design](specs/2026-11-24-power-up-workshop-design.md) §4.2 and §5. The room ID is `workshop`.
+**Power-Up Workshop:** targets `gear-0` to `gear-2`, `socket-0` to `socket-2`, `cable-0` to `cable-2`, and `power-right`; the `game.state` fields and no correction reasons are in the [Power-Up Workshop design](specs/2026-11-24-power-up-workshop-design.md) §4.2 and §5. The room ID is `workshop`. A wrong cable is an accepted mistake, and the state also has `feedback` ([five-game design](specs/five-game-design.md#mistakes-are-accepted-actions)).
 
-**Other games:** each reuses this envelope, room lifecycle, readiness, and `game.finished`/`result.saved` flow. Each game's design defines its targets, its `state` fields (always including `startedAt`, `durationSeconds`, and `serverTime`), and its correction reasons, on the framework in the [framework design](specs/2026-11-23-game-framework-design.md).
+**Other games:** each reuses this envelope, room lifecycle, readiness, and `game.finished`/`result.saved` flow. Each game's design defines its targets, its `state` fields (always including `startedAt`, `durationSeconds`, `serverTime` and `winHeldAt`), and its correction reasons, on the framework in the [framework design](specs/2026-11-23-game-framework-design.md).
 
 **Client notes:**
 
@@ -161,7 +162,7 @@ Revisions: one counter per room, increasing on every change to that room's membe
 - Playing rooms reject new participants with ROOM_LOCKED. Others can see limited board information; in-room spectators are deferred.
 - Proposed lifecycle: waiting -> playing -> finished or cancelled. Replay creates a new session ID and resets readiness. Finished/cancelled rooms return to waiting.
 - Backend validates actions, computes outcomes, and persists results. Rules: Portal Partners in [runtime design](specs/2026-11-17-runtime-transport-design.md) §6; other games in their designs.
-- **Disconnects:** an unexpected disconnect starts the 20-second grace above; reconnecting within it restores the player exactly where they were (same room, position, facing, and running round). Each game declares (a) whether its round pauses or keeps running during the grace and (b) on expiry, whether the round is cancelled or the remaining player may finish. Only "keep running" and "cancel" are built now; "pause" and "finish alone" are deferred ([future features](future-features.md)). Portal Partners and Power-Up Workshop keep running and cancel on expiry ([design](specs/2026-11-24-power-up-workshop-design.md) §4.5); the other games state theirs in their designs; an explicit leave (`room.leave` or `world.leave`) of a playing room cancels the round immediately, with no win. Explain why and offer return. If the runtime restarts, live state is lost and any round in progress ends with no result.
+- **Disconnects:** an unexpected disconnect starts the 20-second grace above; reconnecting within it restores the player exactly where they were (same room, position, facing, and running round). Each game declares (a) whether its round pauses or keeps running during the grace and (b) on expiry, whether the round is cancelled or the remaining player may finish. Only "keep running" and "cancel" are built now; "pause" and "finish alone" are deferred ([future features](future-features.md)). Portal Partners and Power-Up Workshop keep running and cancel on expiry ([design](specs/2026-11-24-power-up-workshop-design.md) §4.5); the other games state theirs in their designs; an explicit leave (`room.leave` or `world.leave`) of a playing room cancels the round immediately, with no win. No round is won while a player is disconnected: the win is held, the round clock stops and the game is frozen, and the round ends as a win once both players are connected, or is cancelled at grace expiry or leave ([five-game design](specs/five-game-design.md#held-win)). Explain why and offer return. If the runtime restarts, live state is lost and any round in progress ends with no result.
 
 ## 7. Results and Wins
 
