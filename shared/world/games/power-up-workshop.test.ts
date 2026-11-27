@@ -126,11 +126,14 @@ describe('Power-Up Workshop module', () => {
     const sock = near('socket-0');
     expect(msg(M.interact(s, sock, 'a', 'socket-0'))).toBe('Bring a cable to this socket.');
     s.held.set('a', 0); // cable A, socket-0 needs B
-    expect(msg(M.interact(s, sock, 'a', 'socket-0'))).toBe('This socket needs cable B.');
+    ok(M.interact(s, sock, 'a', 'socket-0'));
     expect(s.mistakes).toBe(1);
     expect(s.held.get('a')).toBe(0);
     expect(s.sockets[0]).toBe(false);
-    expect(msg(M.interact(s, near('socket-1'), 'a', 'socket-1'))).toBe('This socket needs cable C.');
+    expect(s.feedback).toBe('Socket 1 needs cable B.');
+    ok(M.interact(s, near('socket-1'), 'a', 'socket-1'));
+    expect(s.feedback).toBe('Socket 2 needs cable C.');
+    expect(s.mistakes).toBe(2);
     s.held.set('a', 1);
     ok(M.interact(s, sock, 'a', 'socket-0'));
     expect(s.sockets[0]).toBe(true);
@@ -138,6 +141,39 @@ describe('Power-Up Workshop module', () => {
     expect(M.score(s)).toBe(1);
     s.held.set('a', 1);
     expect(msg(M.interact(s, sock, 'a', 'socket-0'))).toBe('That socket is already connected.');
+  });
+
+  describe('feedback', () => {
+    it('starts empty', () => {
+      expect(fresh().feedback).toBe('');
+    });
+    it('describes each accepted action', () => {
+      const s = fresh(); // level 1: socket-n needs cable n
+      ok(M.interact(s, near('gear-1'), 'a', 'gear-1'));
+      expect(s.feedback).toBe('Gear 2 is now 1.');
+      ok(M.interact(s, near('cable-2'), 'a', 'cable-2'));
+      expect(s.feedback).toBe('Connect cable C to its matching socket.');
+      ok(M.interact(s, near('socket-2'), 'a', 'socket-2'));
+      expect(s.feedback).toBe('Cable fitted.');
+    });
+    it('a wrong cable, then the right one: one mistake, then Cable fitted.', () => {
+      const s = fresh();
+      s.held.set('a', 0);
+      ok(M.interact(s, near('socket-1'), 'a', 'socket-1'));
+      expect(s.feedback).toBe('Socket 2 needs cable B.');
+      ok(M.interact(s, near('socket-0'), 'a', 'socket-0'));
+      expect(s.mistakes).toBe(1);
+      expect(s.feedback).toBe('Cable fitted.');
+    });
+    it('reports a cable returned on disconnect, and nothing when empty-handed', () => {
+      const s = fresh();
+      s.held.set('a', 1);
+      M.onConnection!(s, viewAt(v(0, 0), v(0, 0)), 'a', false);
+      expect(s.feedback).toBe('Cable B went back to its rack.');
+      s.feedback = 'unchanged';
+      M.onConnection!(s, viewAt(v(0, 0), v(0, 0)), 'b', false);
+      expect(s.feedback).toBe('unchanged');
+    });
   });
 
   describe('power-right', () => {
@@ -206,6 +242,7 @@ describe('Power-Up Workshop module', () => {
       socketCables: [2, 0, 1],
       held: [null, 2],
       mistakes: 2,
+      feedback: '',
     });
   });
 

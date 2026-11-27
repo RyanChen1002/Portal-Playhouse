@@ -1,6 +1,6 @@
 # Power-Up Workshop Design: Real-Time Rules on the Game Framework
 
-**Version:** 0.2
+**Version:** 0.3
 
 **Date:** 11/24/2026
 
@@ -18,6 +18,7 @@ Labels: **Decided** means Adam decided it in brainstorming on 11/24/2026. **Prop
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.3 | 11/27/2026 | Noted the changes from the [five-game design](five-game-design.md#shared-rules) v0.3: a wrong cable is now an accepted action, the state gains `feedback`, and a win is held while a player is disconnected. The rules below are otherwise unchanged. |
 | 0.2 | 11/24/2026 | Adam approved the design; linked the plan. Earlier the same day (0.1): initial design: Power-Up Workshop as the second game module; either player can do any step; the five practice combinations rotate round by round; hook exceptions are contained before this module is added. |
 
 ## 1. Intent
@@ -120,7 +121,7 @@ All actions are `game.interact` with a target from §4.2. Each checks the intera
 | --- | --- | --- | --- |
 | `gear-n` | always, in range | Gear n turns one step: 0 → 1 → 2 → 3 → 0. A matched gear can be turned past its target (as in practice) | never |
 | `cable-n` | the player holds nothing, cable n is not plugged in, and the partner is not holding it | The player now holds cable n | "Plug in the cable you are holding first." / "That cable is already plugged in." / "Your teammate has that cable." |
-| `socket-n` | the player holds the cable socket n needs, and socket n is empty | The cable is plugged in; the player holds nothing | Empty-handed: "Bring a cable to this socket." Socket filled: "That socket is already connected." **Wrong cable: "This socket needs cable X."**, and the mistake count goes up by one; the player keeps the cable |
+| `socket-n` | the player holds the cable socket n needs, and socket n is empty | The cable is plugged in; the player holds nothing | Empty-handed: "Bring a cable to this socket." Socket filled: "That socket is already connected." **Wrong cable: "This socket needs cable X."**, and the mistake count goes up by one; the player keeps the cable (v0.3: accepted instead; see the note below) |
 | `power-right` | all three gears match, all three sockets are filled, both players are connected, and the partner is within 1.9 of the left pad | The round ends with a **win** | "Match the gears and cables, then hold both power stations." |
 
 All gears start at 0, so no gear matches at the start. Every combination's targets are 1 to 3, never 0.
@@ -128,6 +129,8 @@ All gears start at 0, so no gear matches at the start. Every combination's targe
 Every gear has a matching target and every cable has a socket, so there is no "put down" action: a held cable can always be plugged in (**Proposal**).
 
 Only a wrong cable counts as a mistake, as in practice (**Proposal**). Pressing `power-right` too early does not.
+
+> **v0.3 change.** The [five-game design's shared rules](five-game-design.md#shared-rules) supersede the wrong-cable row and the mistakes paragraph in §4.6. A wrong cable is now an accepted action. The mistake count rises and the player keeps the cable, as before, but `feedback` becomes "Socket n needs cable X." and `game.state` reaches both players at once. The state gains `feedback` (§5); its texts are listed in the shared rules. The engine's held win applies too, but this game never triggers it, because `power-right` already requires both players to be connected.
 
 ### 4.5 Disconnects
 
@@ -154,6 +157,7 @@ When a player disconnects, any cable they hold goes back to its rack (`onConnect
 | `socketCables` | `[number, number, number]` | The cable each socket needs: 0 = A, 1 = B, 2 = C |
 | `held` | `[number \| null, number \| null]` | The cable each player holds, in join order (the order of `players` in the room snapshot) |
 | `mistakes` | number | Wrong-cable attempts this round |
+| `feedback` | string | Shared text about the latest accepted action (v0.3; see the note in §4.4) |
 
 plus the engine's `startedAt`, `durationSeconds` and `serverTime`, and `gameType: 'power-up-workshop'` beside `sessionId`. A cable's rack is empty while it is held or plugged in; the frontend can tell which from `held` and `sockets`.
 

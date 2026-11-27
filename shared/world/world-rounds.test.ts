@@ -107,6 +107,7 @@ describe('World rounds', () => {
         startedAt: iso(tw.now()),
         durationSeconds: 180,
         serverTime: iso(tw.now()),
+        winHeldAt: null,
       });
 
       // Both participants get the room snapshot with spawn positions and the session.

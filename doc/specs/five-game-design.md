@@ -1,12 +1,12 @@
 # Portal Playhouse Five-Game Design
 
-**Version:** 0.2
+**Version:** 0.3
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
-| 0.2 | 11/27/2026 | Fixed four tables, clarified Rescue and Train wording, and documented the proposed shared win rule during disconnects. |
+| 0.3 | 11/27/2026 | Made the build details concrete for final sign-off: the held win, mistakes as accepted actions (including a Workshop change), state types, messages, rooms, contract additions, Rescue collision and leader handover. Earlier the same day (0.2): fixed four tables, clarified Rescue and Train wording, and documented the proposed shared win rule during disconnects. |
 | 0.1 | 11/25/2026 | Created one review document for all five games. Consolidated the three 11/24 drafts and linked the two merged designs. Game rules unchanged. |
 
 Use this page to review the game rules and prepare the remaining Cloudflare implementations. The three drafts below each describe one online level. Review their interaction targets, state, and result handling together before building against them. All games reuse the [shared framework](2026-11-23-game-framework-design.md) and [component contract](../component-contract.md).
@@ -15,13 +15,70 @@ Use this page to review the game rules and prepare the remaining Cloudflare impl
 | --- | --- | --- |
 | Portal Partners | [Online rules](2026-11-17-runtime-transport-design.md#6-design-portal-partners-on-the-server) | Merged server design |
 | Power-Up Workshop | [Online rules](2026-11-24-power-up-workshop-design.md) | Merged server design |
-| Playhouse Cafe | [Draft rules](#playhouse-cafe) | Interface review pending |
-| Room Rescue | [Draft rules](#room-rescue) | Interface review pending |
-| Tiny Train Team | [Draft rules](#tiny-train-team) | Interface review pending |
+| Playhouse Cafe | [Draft rules](#playhouse-cafe) | Build details in v0.3; final sign-off pending |
+| Room Rescue | [Draft rules](#room-rescue) | Build details in v0.3; final sign-off pending |
+| Tiny Train Team | [Draft rules](#tiny-train-team) | Build details in v0.3; final sign-off pending |
 
-## Proposed shared win rule
+## Shared rules
 
-The engine may award a win only while both players are connected. A disconnected player can rejoin during the existing grace period, after which both players can finish together. Grace expiry and explicit leave still cancel the round. The shared engine change is a backend follow-up.
+Ryan and Adam agreed the first two rules when PR 34 merged. This section states them exactly, for final sign-off. v0.3 is checked against `dev` as of 11/27/2026 (component contract v0.13, with Power-Up Workshop merged).
+
+### Held win
+
+No round is won while a player is disconnected. When a game ends a round with a win while either player is disconnected:
+
+- The action that completed the game is accepted, not rejected.
+- The win is **held**. The round clock stops, so a held round cannot time out.
+- The game is frozen. `game.interact` gets `INVALID_ACTION` "Waiting for your teammate to reconnect." Players can still walk (`checkMove` applies); the engine calls no other game hook.
+- As soon as both players are connected, the round ends as a win, with the score at the moment it was held.
+- Grace expiry and an explicit leave still cancel the round. A held round can therefore end in a cancel after the full 20-second grace.
+- `GameStateBase` gains `winHeldAt: string | null`: the time the win was held, otherwise `null`. While it is set, clients stop the countdown at that time and show that the team is waiting for the partner.
+
+This is an engine rule. Portal Partners and Power-Up Workshop already require both players to be connected before they win, so they never hold a win; the engine rule backs them up.
+
+### Mistakes are accepted actions
+
+A gameplay mistake is accepted, not rejected. That covers a wrong dish (Cafe), a wrong rail orientation (Train) and a wrong cable (Workshop). The player gets `request.accepted`, the mistake count rises, the item stays held, `feedback` says what was wrong, and `game.state` goes to both players at once. `INVALID_ACTION` remains for actions that change nothing.
+
+**Power-Up Workshop change:** `socket-n` with the wrong cable is accepted. `mistakes` rises by one, the cable stays held, and `feedback` becomes "Socket n needs cable X." (n is 1 to 3). `PowerUpWorkshopState` gains `feedback`, set by every accepted action:
+
+| Action | `feedback` |
+| --- | --- |
+| Turn gear n | "Gear n is now k." |
+| Take cable X | "Connect cable X to its matching socket." |
+| Plug in the right cable | "Cable fitted." |
+| Plug in the wrong cable | "Socket n needs cable X." |
+| Disconnect while holding a cable | "Cable X went back to its rack." |
+
+### State conventions
+
+- **Per-player fields:** each new game has `players`, in join order, and each entry carries the player's `id`. Workshop keeps its merged `held` array.
+- **`feedback`:** shared text about the latest accepted action, `''` at round start. Rejections go only to the player who acted, as `INVALID_ACTION`.
+- **Score:** not part of the game state. Clients read `RoomSummary.score`, as for the merged games.
+- **Out of range:** every game uses "Move closer to interact." Targets without a position (`rotate-sofa`, `rotate-track`) have no range check.
+
+### Rooms and contract additions
+
+The entrances are the remaining slots on the courtyard ring in `frontend/games/rooms.js`. Every join radius is 3.2.
+
+| Game | Room ID | Entrance (x, y, z) | `scoreMax` |
+| --- | --- | --- | --- |
+| Playhouse Cafe | `cafe` | (-3.24, 0, 9.99) | 4 |
+| Room Rescue | `rescue` | (8.49, 0, 6.17) | 5 |
+| Tiny Train Team | `train` | (8.49, 0, -6.17) | 6 |
+
+Contract additions (component contract §3, §5 and §7):
+
+- `GAME_TYPES` gains `playhouse-cafe`, `room-rescue` and `tiny-train-team`. A migration adds the three `private.game_types` rows with the `scoreMax` values above.
+- `CorrectionReason` gains `sofaCarry`.
+- `GameStateBase` gains `winHeldAt`.
+- `PowerUpWorkshopState` gains `feedback`.
+- Each new game gets a state type (each game's §6) and a target list (each game's §4).
+
+### Acceptance (all games)
+
+1. A win completed while a player is disconnected is held. The time-out does not end the round, and interactions are rejected. On reconnect, the round ends as a win with the held score; at grace expiry it is cancelled.
+2. A mistake reaches both players in the same `game.state` as the accepted action.
 
 ## Playhouse Cafe
 
@@ -123,23 +180,46 @@ Read current order
 - Out-of-range actions, wrong-station actions, full-hands actions, and attempts by the ineligible player to take ingredients, prepare, or serve the reserved final order are rejected without changing game state.
 - Credit an order to the player whose held prepared dish is accepted at `serve`. Items cannot be transferred between players.
 - When the fourth order becomes current, if one player has completed zero orders, reserve the entire order for that player: only they may take ingredients, start or continue preparation, and serve it. If the other player's preparation is active at that transition, cancel it and leave their held item available to clear at `bin`. If both players have completed at least one order, either may complete the fourth order.
-- The round wins after all four orders are served and both players have completed at least one. The engine ends the round on timeout as a loss if this condition has not been reached by 180 seconds.
+- The round wins after all four orders are served and both players have completed at least one. If the partner is disconnected at the fourth serve, the serve is accepted and the win is held ([Held win](#held-win)). The engine ends the round on timeout as a loss if this condition has not been reached by 180 seconds.
+- Only a prepared dish of the wrong kind is a mistake. Serving with empty hands or raw ingredients is rejected.
 
 There is no penalty beyond a mistake count for a wrong dish. Mistakes are round state for display only and are not part of the persisted result. The score is the number of completed orders, from 0 to 4.
+
+**Messages** (rejections go to the player who acted; feedback goes to both):
+
+| Case | Rejection | Feedback |
+| --- | --- | --- |
+| Take ingredients with full hands | "Your hands are full. Serve or use the clear station." | |
+| Take ingredients | | "Carry ingredients to the board." / "Carry ingredients to the stove." |
+| Station without its raw ingredients | "This station needs raw salad ingredients." / "This station needs raw soup ingredients." | |
+| Station while a preparation runs | "Finish the current preparation first." | |
+| Preparation starts / completes / is cancelled | | "Preparing salad. Stay near the station." (or soup) / "Dish ready. Take it to the serving counter." / "Preparation cancelled. Stay by the station." |
+| Serve without a prepared dish | "Bring a prepared dish to serve." | |
+| Serve the right dish / a wrong dish | | "Order served!" / "Order needs prepared soup. Nothing served." (or salad) |
+| Final order reserved for the teammate | "Your teammate must complete the last order." | |
+| Clear station with empty hands / with an item | "Your hands are already empty." | "Hands empty." |
 
 ### 6. State and Framework Mapping
 
 The game module uses the shared `GameModule` interface. It does not read the system clock, generate IDs, access storage, or send network messages. Timed preparation uses `RoundView.now`; the engine owns `startedAt`, `durationSeconds`, and `serverTime`.
 
-The game-specific `game.state` fields should include:
+The game-specific `game.state` fields:
 
-- `orders`: the four fixed dish IDs.
-- `completedOrders`: integer from 0 to 4.
-- `players`: both player IDs, each player's held item (or `null`) and completed-order count.
-- `preparation`: `null` or the dish, owning player ID, and remaining milliseconds. Internally, the module stores a completion deadline derived from `RoundView.now`.
-- `mistakes`: wrong-dish attempts in this round.
-- `requiredOrderPlayerId`: `null` except when the final order is reserved for the player who has not completed an order.
-- `feedback`: short shared text describing the latest gameplay result or required action.
+```ts
+type Dish = 'salad' | 'soup';
+type CafeItem = 'raw-salad' | 'raw-soup' | 'salad' | 'soup';
+interface PlayhouseCafeState extends GameStateBase {
+  orders: Dish[];             // ['salad', 'soup', 'salad', 'soup']
+  completedOrders: number;    // 0..4; orders[completedOrders] is the current order
+  players: { id: string; held: CafeItem | null; served: number }[]; // join order
+  preparation: { dish: Dish; playerId: string; remainingMs: number } | null;
+  requiredOrderPlayerId: string | null; // set only while the final order is reserved
+  mistakes: number;
+  feedback: string;
+}
+```
+
+Targets: `salad`, `soup`, `board`, `stove`, `serve`, `bin`. Internally, the module stores the preparation's completion deadline, derived from `RoundView.now`.
 
 The game view is public to both room participants and contains no account secrets. The engine adds the standard time fields and the outer `gameType`. The game module returns score 0-4; it uses the shared result table and creates no Cafe-specific database table or events.
 
@@ -169,7 +249,7 @@ The game view is public to both room participants and contains no account secret
 - Online versions of Cafe practice levels 2-5.
 - Tray handoffs, role locks, extra recipes, or order variation.
 - Persistent mistake counts, currencies, unlocks, or Cafe-specific result storage.
-- Changes to the shared engine, lobby, room lifecycle, or other games.
+- Changes to the shared engine, lobby, room lifecycle, or other games, beyond the [shared rules](#shared-rules).
 
 ### 10. References and Builder Decisions
 
@@ -250,6 +330,8 @@ Target IDs and positions use the current practice layout (`y = 0`):
 
 The partition is centered at `x = 0`, with a doorway open for `|z| <= 1.45`. Current practice places its wall sections at `z = -4.8` and `z = 4.8`. Small items use the player-sized collision footprint. While carrying the sofa, validate its full oriented footprint: half-extents are `(2, 0.7)` when horizontal and `(0.7, 2)` when vertical. The movement hook rejects a move whose path intersects the partition outside the doorway or crosses the arena boundary.
 
+Collision uses the practice rule. A footprint is centered on the moving player (the leader, while carrying). Its half-extents `(hx, hz)` are `(0.35, 0.35)` for a player, or the sofa's while carrying. It is blocked where `|x| < hx + 0.25` and `|z| + hz > 1.45` (the partition outside the doorway), or where `|x| + hx > 10` or `|z| + hz > 8`. The whole path is checked; practice checks in steps of 0.12. The follower always stands inside the sofa footprint, so it needs no check of its own, and its override always lies inside the arena.
+
 ### 5. Round Rules
 
 - The round starts with four unplaced items, the sofa at `(-5, 0)`, and score 0.
@@ -259,28 +341,57 @@ The partition is centered at `x = 0`, with a doorway open for `|z| <= 1.45`. Cur
 - The sofa cannot be lifted while either player is carrying an item. Both players must be within 2.7 units of its target. The lift initiator becomes leader; on lift, the server aligns the partner at the follower offset.
 - While carrying, the leader moves at speed 2.4. The follower's movement requests are ignored, and the server overrides the follower's position after each accepted leader move. The follower offset is `(-1.3, 0)` when horizontal and `(0, -1.3)` when vertical, matching the practice movement model.
 - The follower's client must not predict independent movement during the carry. It renders authoritative follower updates with smooth interpolation. The server remains authoritative; the visual interpolation does not change accepted positions.
-- The sofa starts vertical (`rotation = 1`, modulo 4). `rotate-sofa` is accepted only from the leader while `abs(x) >= 2.3` and `abs(z) <= 5.7`; rotate once to make it horizontal before crossing the center doorway. Recalculate the follower offset when orientation changes.
-- On the final approach, the leader uses `sofa-spot` to place the sofa and end the paired-carry state. This adds one point. The round wins when the sofa and all four items are placed.
+- The sofa starts vertical (`rotation = 1`, modulo 4). `rotate-sofa` is accepted only from the leader while `abs(x) >= 2.3` and `abs(z) <= 5.7`, and only if the turned footprint passes the collision rule. Rotate once to make it horizontal before crossing the center doorway. Recalculate the follower offset when orientation changes.
+- While the sofa is carried, the sofa is centered on the leader (as practice draws it), and item and outline actions are rejected for both players.
+- On the final approach, the leader uses `sofa-spot` to place the sofa and end the paired-carry state. This adds one point. The round wins when the sofa and all four items are placed. If a player is disconnected at that moment, the placement is accepted and the win is held ([Held win](#held-win)).
+
+**Messages** (rejections go to the player who acted; feedback goes to both):
+
+| Case | Rejection | Feedback |
+| --- | --- | --- |
+| Item already placed | "That item is already placed." | |
+| Item the teammate holds | "Your teammate is already carrying this item." | |
+| Item while holding another | "Place what you are carrying first." | |
+| Item or outline during a sofa carry | "Place the sofa first." | |
+| Pick up / return an item | | "Carry it to the matching numbered outline." / "Item returned." |
+| Outline without its item | "This outline belongs to item n." | |
+| Place an item | | "Item placed." |
+| Lift fails (hands full, or someone too far) | "Both teammates need empty hands and must stand near the sofa." | |
+| `sofa` after the lift | "The sofa has already been lifted." | |
+| Lift | | "Moving together. Turn the sofa to fit through the doorway." |
+| `rotate-sofa` or `sofa-spot` by anyone but the leader | "Only the sofa leader can do that." | |
+| `rotate-sofa` outside the safe area, or where the turned sofa does not fit | "Move away from the wall before turning the sofa." | |
+| Turn / place the sofa | | "Sofa turned." / "Sofa placed." |
+| Leader handover (§7) | | "Your teammate now leads the sofa." |
 - `scoreMax` is 5. The engine ends the round on timeout as a loss if the win condition has not been reached by 240 seconds.
 
 ### 6. State and Framework Mapping
 
 The game module uses the shared `GameModule` interface. It does not read the system clock, generate IDs, access storage, or send network messages. Movement and reconnect decisions use `RoundView.now` and the player positions/connections passed by the engine.
 
-The game-specific `game.state` fields should include:
+The game-specific `game.state` fields:
 
-- `itemsPlaced`: four booleans, indexed by item number.
-- `players`: both player IDs and each player's held item (or `null`).
-- `sofa`: `atSource`, `carried`, or `placed`; while carried, include leader ID and orientation.
-- `score`: derived from the number of placed items plus the placed sofa.
-- `feedback`: short shared text for current objectives and rejected placement/carry attempts.
+```ts
+type RescueSofa =
+  | { status: 'atSource' }
+  | { status: 'carried'; leaderId: string; vertical: boolean }
+  | { status: 'placed' };
+interface RoomRescueState extends GameStateBase {
+  itemsPlaced: boolean[];   // 4, by item number
+  players: { id: string; held: number | null }[]; // join order; held is an item number
+  sofa: RescueSofa;
+  feedback: string;
+}
+```
+
+Targets: `item-0` to `item-3`, `spot-0` to `spot-3`, `sofa`, `rotate-sofa`, `sofa-spot`. The score (placed items plus the placed sofa) is the board's, not a state field.
 
 While carrying, the leader's accepted movement is checked against the sofa footprint. The follower's own moves return `ignore`; accepted leader movement and rotation return `sofaCarry` overrides for the follower. No new framework hook or event is required, but the contract must allow the game-declared `sofaCarry` correction reason before implementation.
 
 ### 7. Disconnects, Replay, and Results
 
 - A disconnected participant's held item and position remain in state during the 20-second grace. The room remains active.
-- If the sofa leader disconnects while the partner is connected, promote the connected partner to leader and reposition the disconnected player to the follower offset. If the previous leader reconnects, keep the current leader until the sofa is placed to avoid another position shift. This is a proposal to preserve control while the round keeps running.
+- If the sofa leader disconnects while the partner is connected, the connected partner becomes leader, and the two players swap positions (two `sofaCarry` overrides). The sofa and its footprint therefore do not move. If the previous leader reconnects, keep the current leader until the sofa is placed to avoid another position shift. This is a proposal to preserve control while the round keeps running.
 - If the follower disconnects, the leader may keep moving the pair; server overrides continue to position the disconnected follower. A player with a held small item keeps it through grace.
 - Grace expiry or an explicit leave cancels the round with no win. Use the shared cancellation reason and result flow.
 - Replay creates a new session and resets placed items, held items, sofa state, and score.
@@ -303,7 +414,7 @@ While carrying, the leader's accepted movement is checked against the sofa footp
 - Online versions of Rescue practice levels 2-5, including changed delivery orders, required take-turns, or teammate spotting at every small-item outline.
 - Leadership handoff during a sofa carry or simultaneous two-person steering.
 - Free physics-based furniture movement, new framework hooks, new server events, or Rescue-specific result storage.
-- Changes to the shared engine, lobby, room lifecycle, or other games.
+- Changes to the shared engine, lobby, room lifecycle, or other games, beyond the [shared rules](#shared-rules).
 
 ### 10. References and Builder Decisions
 
@@ -398,24 +509,42 @@ The train starts at `(-9, 0)`. The station platform is beside the final route ma
 - Attempting a wrong orientation is a gameplay mistake: increment `mistakes`, keep the rail in hand, leave the route and score unchanged, and update shared feedback. Do not treat it as an invalid target or award progress.
 - A rail cannot be placed on an already filled segment or a segment the train has passed. A player without a rail cannot place one. These rejected actions do not change score or unrelated player state.
 - The train leaves at `startedAt + 25 seconds`. It advances one route connection every 10 seconds. At each arrival deadline, the server checks that segment; if it is missing, the round immediately ends in a loss.
-- The deadlines are based on round start, not tick count: first segment at `startedAt + 35 seconds`, then one per 10 seconds through the sixth segment at `startedAt + 85 seconds`. If the sixth segment is present when the train reaches the station, the round wins. A complete track before arrival does not win by itself.
+- The deadlines are based on round start, not tick count: first segment at `startedAt + 35 seconds`, then one per 10 seconds through the sixth segment at `startedAt + 85 seconds`. If the sixth segment is present when the train reaches the station, the round wins. If a player is disconnected at that moment, the win is held and the clock stops ([Held win](#held-win)), so the round can no longer be lost. A complete track before arrival does not win by itself.
 - `scoreMax` is 6. The engine's 120-second limit is an upper bound; in a normally ticking round, the train resolves the game by 85 seconds.
+- A segment the train has passed is always placed (otherwise the round was lost), so "already placed" covers both rejections.
 
 If a tick arrives late, process every due arrival in order against the authoritative route state. A missing earlier segment still causes a loss; a delayed tick must not skip it.
+
+**Messages** (rejections go to the player who acted; feedback goes to both):
+
+| Case | Rejection | Feedback |
+| --- | --- | --- |
+| `supply` while holding a rail | "Place your rail first." | |
+| Take a rail | | "Match the rail to a numbered route marker." |
+| `rotate-track` with empty hands | "Pick up a rail first." | |
+| Turn the rail | | "Rail turned: vertical." / "Rail turned: horizontal." |
+| `rail-n` with empty hands | "Fetch a rail from the supply rack." | |
+| `rail-n` already placed | "That rail is already placed." | |
+| Place a rail / wrong orientation | | "Rail placed. Keep building ahead of the train." / "Turn the rail to match the horizontal route." |
+| Disconnect while holding a rail | | "A rail went back to the supply." |
 
 ### 6. State and Framework Mapping
 
 The game module uses the shared `GameModule` interface. It does not read the system clock, generate IDs, access storage, or send network messages. Train deadlines use `RoundView.now` and the engine-provided `startedAt`.
 
-The game-specific `game.state` fields should include:
+The game-specific `game.state` fields:
 
-- `railsPlaced`: six booleans, indexed by route segment.
-- `players`: both player IDs, each player's held rail and its orientation (or `null`).
-- `trainStep`: the index of the next segment the train must pass, from 0 to 6.
-- `mistakes`: rejected wrong-orientation placement attempts.
-- `score`: number of rails placed, from 0 to 6.
-- `feedback`: short shared text for the next rail and the train's progress.
-- Standard `startedAt`, `durationSeconds`, and `serverTime` fields from the framework.
+```ts
+interface TinyTrainTeamState extends GameStateBase {
+  railsPlaced: boolean[];   // 6, by route segment
+  players: { id: string; rail: 'horizontal' | 'vertical' | null }[]; // join order; null = empty hands
+  trainStep: number;        // 0..6: the next segment the train must pass
+  mistakes: number;         // wrong-orientation attempts
+  feedback: string;
+}
+```
+
+Targets: `rail-0` to `rail-5`, `supply`, `rotate-track`. The score (rails placed) is the board's, not a state field.
 
 `tick` checks all due arrivals using absolute times and returns `end: 'loss'` on a missing rail or `end: 'win'` when the train reaches the station with every segment present. `view` supplies the train step, rail states, held rail/orientation, and standard time fields to both clients. No new framework hook, event, correction reason, or error code is required.
 
@@ -445,7 +574,7 @@ The game-specific `game.state` fields should include:
 - Rail removal, route switching, train braking, train-speed controls, physics simulation, or penalties beyond the mistake counter.
 - A required minimum number of rail placements per player.
 - Persistent mistake counts, new framework events, or Train-specific result storage.
-- Changes to the shared engine, lobby, room lifecycle, or other games.
+- Changes to the shared engine, lobby, room lifecycle, or other games, beyond the [shared rules](#shared-rules).
 
 ### 10. References and Builder Decisions
 

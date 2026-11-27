@@ -34,6 +34,8 @@ export interface PUWState {
   /** Cable held, by player id; absent when empty-handed. */
   held: Map<string, number>;
   mistakes: number;
+  /** Shared text about the latest accepted action; '' at start. */
+  feedback: string;
 }
 
 type PUWView = Omit<PowerUpWorkshopState, keyof GameStateBase>;
@@ -77,6 +79,7 @@ export const POWER_UP_WORKSHOP: GameModule<PUWState, PUWView> = {
       socketCables: [...level.socketCables],
       held: new Map(),
       mistakes: 0,
+      feedback: '',
     };
   },
 
@@ -89,6 +92,7 @@ export const POWER_UP_WORKSHOP: GameModule<PUWState, PUWView> = {
     const n = Number(target.slice(-1));
     if (target.startsWith('gear-')) {
       s.gears[n] = (s.gears[n]! + 1) % 4;
+      s.feedback = `Gear ${n + 1} is now ${s.gears[n]}.`;
       return changed;
     }
     const holding = s.held.get(playerId);
@@ -97,17 +101,21 @@ export const POWER_UP_WORKSHOP: GameModule<PUWState, PUWView> = {
       if (cablePlugged(s, n)) return invalid('That cable is already plugged in.');
       if ([...s.held.values()].includes(n)) return invalid('Your teammate has that cable.');
       s.held.set(playerId, n);
+      s.feedback = `Connect cable ${CABLE_LETTERS[n]} to its matching socket.`;
       return changed;
     }
     if (target.startsWith('socket-')) {
       if (s.sockets[n]) return invalid('That socket is already connected.');
       if (holding === undefined) return invalid('Bring a cable to this socket.');
       if (holding !== s.socketCables[n]) {
+        // A mistake is an accepted action, so both players see it at once.
         s.mistakes += 1;
-        return invalid(`This socket needs cable ${CABLE_LETTERS[s.socketCables[n]!]}.`);
+        s.feedback = `Socket ${n + 1} needs cable ${CABLE_LETTERS[s.socketCables[n]!]}.`;
+        return changed;
       }
       s.sockets[n] = true;
       s.held.delete(playerId);
+      s.feedback = 'Cable fitted.';
       return changed;
     }
     const partner = view.players.find((p) => p.id !== playerId)!;
@@ -121,7 +129,10 @@ export const POWER_UP_WORKSHOP: GameModule<PUWState, PUWView> = {
   },
 
   onConnection(s, _view, playerId, connected) {
-    if (connected || !s.held.delete(playerId)) return {};
+    const cable = s.held.get(playerId);
+    if (connected || cable === undefined) return {};
+    s.held.delete(playerId);
+    s.feedback = `Cable ${CABLE_LETTERS[cable]} went back to its rack.`;
     return { stateChanged: true };
   },
 
@@ -134,6 +145,7 @@ export const POWER_UP_WORKSHOP: GameModule<PUWState, PUWView> = {
       socketCables: [...s.socketCables],
       held: [s.held.get(view.players[0].id) ?? null, s.held.get(view.players[1].id) ?? null],
       mistakes: s.mistakes,
+      feedback: s.feedback,
     };
   },
 

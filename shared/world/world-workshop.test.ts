@@ -119,6 +119,23 @@ describe('Power-Up Workshop in the world', () => {
     expect(workshop.at(-1)).toMatchObject({ name: 'Power-Up Workshop', score: 1, status: 'playing' });
   });
 
+  it('a wrong cable is accepted and reaches both players at once', () => {
+    const r = startWorkshop();
+    const needed = r.state.socketCables[0]!;
+    const wrong = (needed + 1) % 3;
+    goTo(r, 1, CABLE_POINTS[wrong]!);
+    use(r, 1, `cable-${wrong}`);
+    goTo(r, 1, SOCKET_POINTS[0]!);
+    r.tw.clear();
+    // No clock advance: the state must come with the action, not the once-a-second refresh.
+    const msgs1 = use(r, 1, 'socket-0');
+    expect(lastReply(msgs1)?.type).toBe('request.accepted');
+    const expected = { mistakes: 1, feedback: `Socket 1 needs cable ${'ABC'[needed]}.`, sockets: [false, false, false] };
+    for (const msgs of [msgs1, r.tw.messagesFor(conn(2))]) {
+      expect(workshopStates(msgs).at(-1)).toMatchObject(expected);
+    }
+  });
+
   it('a full scripted round is a win with score 6', () => {
     const r = startWorkshop();
     const { gearTargets, socketCables } = r.state;
