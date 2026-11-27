@@ -64,6 +64,7 @@ export interface PowerUpWorkshopState extends GameStateBase {
   socketCables: [number, number, number]; // 0 = A, 1 = B, 2 = C
   held: [number | null, number | null]; // join order
   mistakes: number;
+  feedback: string; // shared text about the latest accepted action; '' at start
 }
 /** One member per game; each game adds its own. */
 export type GameStatePayload =
