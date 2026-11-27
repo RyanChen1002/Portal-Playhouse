@@ -3,10 +3,20 @@ import {
   advancePortal,
   resultText,
   leaveLiveRoom,
+  historyRow,
+  readyLabel,
+  bridgeStatusLabel,
+  formatHistoryDate,
+  enterShortcutAction,
 } from "./live-state.js";
 import { createStage } from "./games/scene.js";
-import { authenticate } from "./auth.js";
-import { targets, near } from "./games/rules.js";
+import { bindDialogEscape } from "./games/menu.js";
+import { authenticate, notifyAuthenticated, welcomeView } from "./auth.js";
+import { near } from "./games/rules.js";
+import { targets } from "./games/practice.js";
+
+import { supportsOnlineRoom } from "./games/rooms.js";
+const workshopGuide = "Match the gear targets, connect the cables to the labeled sockets, then have one teammate stand on left power while the other activates right power.";
 
 // Dev only. Public browser credentials; never put a service/secret key here.
 const config = {
@@ -19,6 +29,7 @@ const $ = (s) => document.querySelector(s);
 let client,
   connection,
   profile,
+  historyResults = [],
   unsub = [],
   online = false,
   practiceAway = false,
@@ -30,6 +41,9 @@ let client,
   raf = 0,
   menu = false,
   confirmLeave = false,
+  intro = false,
+  introSeen = false,
+  lastResultId = null,
   resetPrediction = true;
 const keys = new Set();
 const live = (window.playhouseLive = {
@@ -79,7 +93,7 @@ function modeLabels() {
   const text = [...label.childNodes].find((node) => node.nodeType === 3);
   if (text) text.textContent = online ? " ONLINE DEV " : " PRACTICE MODE ";
   $(".page-footer > span:last-child").textContent = online
-    ? "Portal Partners online · Four local practice games"
+    ? "Online play · Practice also available"
     : "Five local practice games";
   $(".player-card small").textContent = online
     ? "Development account"
@@ -97,36 +111,101 @@ function modeLabels() {
     ? "Online results and local practice"
     : "Your story starts here.";
   $("#history .empty-state p").textContent = online
-    ? "Portal Partners results are loaded from your account. Local practice results below are separate and reset on reload."
+    ? "Online results are loaded from your account. Local practice results below are separate and reset on reload."
     : "Practice results appear below after you play. They reset on reload and are not saved online.";
 }
-async function refreshHistory() {
-  if (!online || !client) return;
+let historyRequest = null;
+async function refreshHistory(cursor = null) {
+  if (!online || !client || historyRequest) return;
+  const request = {};
+  historyRequest = request;
+  let list = $("#online-history");
+  if (!list) {
+    list = document.createElement("div");
+    list.id = "online-history";
+    $("#history").append(list);
+  }
+  list.querySelector(".history-error")?.remove();
+  const more = list.querySelector(".history-more");
+  if (more) more.disabled = true;
+  list.setAttribute("aria-busy", "true");
   try {
-    const data = checked(await client.getMyResults());
-    let list = $("#online-history");
-    if (!list) {
-      list = document.createElement("div");
-      list.id = "online-history";
-      $("#history").append(list);
-    }
+    const data = checked(await client.getMyResults(cursor ? { cursor } : {}));
+    const freshProfile = checked(await client.getMe());
+    if (!online || !list.isConnected || historyRequest !== request) return;
+    historyResults = cursor ? [...historyResults, ...data.results] : data.results;
+    applyProfile(freshProfile);
     list.replaceChildren();
-    for (const result of data.results) {
-      const p = document.createElement("p");
-      p.textContent =
-        "Portal Partners · " +
-        result.outcome +
-        " · " +
-        result.score +
-        " points · " +
-        new Date(result.completedAt).toLocaleString();
-      list.append(p);
+    if (!historyResults.length) {
+      const empty = document.createElement("p");
+      empty.className = "history-empty";
+      empty.textContent = "No completed online rounds yet.";
+      list.append(empty);
+    } else {
+      const table = document.createElement("table");
+      table.className = "history-table";
+      table.innerHTML =
+        "<thead><tr><th>Game</th><th>Result</th><th>Played with</th><th>Score</th><th>Date and time</th></tr></thead>";
+      const body = document.createElement("tbody");
+      for (const result of historyResults) {
+        const row = historyRow(result, profile?.id);
+        const date = new Date(row.dateTime);
+        const dateText =
+          row.dateTime === "Date unavailable" || Number.isNaN(date.valueOf())
+            ? "Date unavailable"
+            : formatHistoryDate(row.dateTime) +
+              " " +
+              date.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+                timeZoneName: "short",
+              });
+        const tr = document.createElement("tr");
+        for (const [label, value] of [
+          ["Game", row.game],
+          ["Result", row.result],
+          ["Played with", row.playedWith],
+          ["Score", row.score],
+          ["Date and time", dateText],
+        ]) {
+          const td = document.createElement("td");
+          td.dataset.label = label;
+          td.textContent = value;
+          tr.append(td);
+        }
+        body.append(tr);
+      }
+      table.append(body);
+      list.append(table);
+      if (data.nextCursor) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "button secondary history-more";
+        more.textContent = "Load more";
+        more.onclick = () => refreshHistory(data.nextCursor);
+        list.append(more);
+      }
     }
-    applyProfile(checked(await client.getMe()));
     $("#history .pill").textContent =
       profile.winsTotal + " wins · Saved results";
   } catch (error) {
-    message("Could not load saved history: " + error.message);
+    if (!online || !list.isConnected || historyRequest !== request) return;
+    more?.remove();
+    const panel = document.createElement("div");
+    panel.className = "history-error";
+    const notice = document.createElement("p");
+    notice.setAttribute("role", "alert");
+    notice.textContent = "Could not load saved history: " + error.message;
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "button secondary history-more";
+    retry.textContent = "Retry";
+    retry.onclick = () => refreshHistory(cursor);
+    panel.append(notice, retry);
+    list.append(panel);
+  } finally {
+    if (historyRequest === request) historyRequest = null;
+    list.removeAttribute("aria-busy");
   }
 }
 window.addEventListener("hashchange", () => {
@@ -197,7 +276,7 @@ mode.type = "button";
 mode.className = "button secondary";
 mode.textContent = "Sign in to online play";
 form.before(mode);
-let authMode = false;
+let authMode = welcomeView().online;
 let registering = false;
 const accountSwitch = document.createElement("button");
 accountSwitch.type = "button";
@@ -209,18 +288,21 @@ const nameFields = document.createElement("div");
 nameFields.innerHTML = '<label for="signup-name">Display name</label><input id="signup-name" name="displayName" autocomplete="nickname" aria-describedby="signup-name-help login-error"><p id="signup-name-help" class="muted">Choose a unique name, 1–24 characters.</p>';
 form.prepend(nameFields);
 function renderAuth() {
+  const authView = welcomeView({ online: authMode, registering });
   nameFields.hidden = !registering;
   $("#signup-name").disabled = !registering;
   $("#signup-name").required = registering;
   $("#login-email").autocomplete = authMode ? "email" : "off";
   $("#login-password").autocomplete = registering ? "new-password" : authMode ? "current-password" : "off";
   $("#login-password").placeholder = registering ? "At least 8 characters" : authMode ? "Your account password" : "Enter sample password";
-  mode.textContent = authMode ? "Use offline practice instead" : "Sign in to online play";
+  mode.textContent = authView.modeLabel;
   accountSwitch.textContent = registering ? "Already have an account? Sign in" : "Create an account";
-  form.querySelector("[type=submit]").textContent = registering ? "Create account and continue" : authMode ? "Sign in and play online" : "Enter practice mode";
+  form.querySelector("[type=submit]").textContent = authView.submitLabel;
+  $("#demo-enter").hidden = authMode;
+  $(".or-line").hidden = authMode;
   $("#login-step .demo-disclosure").textContent = authMode
-    ? "Accounts use our development server. Portal Partners supports online play; the other four games are local practice."
-    : "Offline practice: explorer@example.test / playhouse-demo. Nothing is sent or saved.";
+    ? "Accounts use our development server. Available online rooms are shown in the lobby."
+    : "Offline practice uses sample data. Nothing is sent or saved online.";
   $("#login-error").textContent = "";
   form.querySelectorAll("input").forEach(input => input.removeAttribute("aria-invalid"));
 }
@@ -243,7 +325,8 @@ mode.onclick = () => {
 };
 renderAuth();
 form.onsubmit = async (event) => {
-  if (!authMode) return offlineSubmit(event);
+  const authView = welcomeView({ online: authMode, registering });
+  if (authView.primaryAction === "practice") return offlineSubmit(event);
   event.preventDefault();
   if (busy) return;
   busy = true;
@@ -255,7 +338,7 @@ form.onsubmit = async (event) => {
   form.querySelectorAll("input").forEach(input => input.removeAttribute("aria-invalid"));
   try {
     const c = await getClient();
-    applyProfile(await authenticate(c, registering ? "signup" : "signin", {
+    applyProfile(await authenticate(c, authView.primaryAction, {
           email: $("#login-email").value,
           password: $("#login-password").value,
           displayName: $("#signup-name").value,
@@ -263,7 +346,7 @@ form.onsubmit = async (event) => {
     online = true;
     $("#login-error").textContent = "";
     $("#demo-enter").disabled = false;
-    $("#demo-enter").click();
+    notifyAuthenticated();
   } catch (error) {
     $("#login-error").textContent = error.message;
     const field = { displayName: "#signup-name", email: "#login-email", password: "#login-password" }[error.field];
@@ -330,6 +413,8 @@ $("#sign-out-demo").onclick = async () => {
     disconnectView();
     window.dispatchEvent(new Event("playhouse-offline"));
     modeLabels();
+    historyRequest = null;
+    historyResults = [];
     $("#online-history")?.remove();
     offlineExit();
   } catch (error) {
@@ -345,13 +430,14 @@ dialog.className = "live-game-dialog";
 dialog.setAttribute("aria-label", "Online Portal Partners");
 document.body.append(dialog);
 dialog.innerHTML =
-  '<div class="game-shell"><div class="game-viewport" tabindex="0" role="group" aria-label="Online Portal Partners. WASD moves, E interacts, Escape opens the menu."></div><header class="game-top"><div class="game-title"><h1>Portal Partners</h1></div><div class="game-top-actions"><span class="game-clock" id="live-clock"></span><button class="game-button" data-live="menu">Menu · Esc</button></div></header><section class="game-goal"><span class="game-eyebrow">ONLINE · TWO PLAYERS</span><p id="live-goal"></p><p id="live-team"></p></section><footer class="game-toolbar"><p id="live-prompt"></p><div class="game-control-row"><span>WASD · Move</span><button class="game-button" data-live="interact">E · Interact</button><button class="game-button is-primary" data-live="ready">Ready</button></div><small id="live-status" role="status"></small></footer><section class="game-cover" hidden><div class="game-menu"><h2 id="live-menu-title">Take a moment.</h2><p id="live-menu-copy">The online round keeps running while this menu is open.</p><button class="game-button is-primary" data-live="resume">Keep playing</button><button class="game-button" data-live="leave">Return to lobby</button></div></section></div>';
+  '<div class="game-shell"><div class="game-viewport" tabindex="0" role="group" aria-label="Online Portal Partners. WASD or arrow keys move, E interacts, Enter marks Ready while waiting, and Escape opens the menu."></div><header class="game-top"><div class="game-title"><h1>Portal Partners</h1></div><div class="game-top-actions"><span class="game-clock" id="live-clock"></span><button class="game-button" data-live="help">Help · H</button><button class="game-button" data-live="menu">Menu · Esc</button></div></header><section class="game-goal"><span class="game-eyebrow">ONLINE · TWO PLAYERS</span><p id="live-goal"></p><p id="live-team"></p></section><footer class="game-toolbar"><p id="live-prompt"></p><div class="game-control-row"><span>WASD / arrows · Move</span><button class="game-button" data-live="interact">E · Interact</button><button class="game-button is-primary live-ready" data-live="ready" aria-keyshortcuts="Enter">Enter · Ready up</button></div><small id="live-status" role="status"></small></footer><section class="game-cover live-intro" hidden><div class="game-menu"><p class="game-eyebrow">PORTAL PARTNERS</p><h2>Hold, cross, collect, meet.</h2><ol><li>One teammate holds the gold pressure plate so the bridge stays open.</li><li>The other crosses, pulls the lever, and latches the bridge open.</li><li>Both collect a crystal, then meet at the exit.</li></ol><p><strong>Controls:</strong> WASD or arrow keys move. E interacts. After this guide, Enter readies you. Esc opens the menu.</p><button class="game-button is-primary" data-live="intro-close">Got it — Ready up</button></div></section><section class="game-cover live-result" hidden><div class="game-menu"><p class="game-eyebrow">ROUND ENDED</p><h2 id="live-result-title">Round complete.</h2><p id="live-result-copy"></p><div class="game-menu-actions"><button class="game-button is-primary" data-live="replay">Play again</button><button class="game-button" data-live="result-close">Dismiss</button><button class="game-button" data-live="leave">Return to lobby</button></div></section><section class="game-cover live-menu" hidden><div class="game-menu"><h2 id="live-menu-title">Take a moment.</h2><p id="live-menu-copy">Use Tab to choose an action and Enter to select it; Escape resumes play.</p><button class="game-button is-primary" data-live="resume">Keep playing</button><button class="game-button" data-live="leave">Return to lobby</button></div></section></div>';
 function closeScene() {
   cancelAnimationFrame(raf);
   stage?.dispose();
   stage = null;
   roster = "";
   keys.clear();
+  intro = false;
   dialog.close();
   window.playhouseGameOpen = false;
   window.dispatchEvent(
@@ -359,17 +445,43 @@ function closeScene() {
   );
   $("#world").focus();
 }
-function openScene() {
+function openScene(id) {
   if (dialog.open) return;
+  const workshop = id === "workshop";
+  const title = workshop ? "Power-Up Workshop" : "Portal Partners";
+  dialog.querySelector("h1").textContent = title;
+  const guide = dialog.querySelector(".live-intro");
+  guide.querySelector(".game-eyebrow").textContent = title.toUpperCase();
+  guide.querySelector("h2").textContent = workshop ? "Power the machine together." : "Hold, cross, collect, meet.";
+  const steps = workshop ? [
+    "Rotate the gears to match the displayed targets.",
+    "Carry each cable to its matching socket.",
+    "Stand at left power while your teammate activates right power.",
+  ] : [
+    "One teammate holds the gold pressure plate so the bridge stays open.",
+    "The other crosses, pulls the lever, and latches the bridge open.",
+    "Both collect a crystal, then meet at the exit.",
+  ];
+  guide.querySelector("ol").replaceChildren(...steps.map(text => {
+    const item = document.createElement("li");
+    item.textContent = text;
+    return item;
+  }));
+  dialog.setAttribute("aria-label", "Online " + title);
+  dialog.querySelector(".game-viewport").setAttribute("aria-label", title + ". WASD moves, E interacts, Enter readies, Escape opens the menu.");
   menu = false;
   confirmLeave = false;
   resetPrediction = true;
   last = 0;
   window.playhouseGameOpen = true;
   dialog.showModal();
-  dialog.querySelector(".game-cover").hidden = true;
+  dialog.querySelectorAll(".game-cover").forEach(cover => (cover.hidden = true));
+  if (workshop || !introSeen) {
+    intro = true;
+    dialog.querySelector(".live-intro").hidden = false;
+  }
   window.dispatchEvent(
-    new CustomEvent("playhouse-game-status", { detail: { id: "portal" } }),
+    new CustomEvent("playhouse-game-status", { detail: { id } }),
   );
   dialog.querySelector(".game-viewport").focus();
   raf = requestAnimationFrame(frame);
@@ -378,10 +490,10 @@ async function enter(id) {
   if (busy) return;
   busy = true;
   try {
-    if (id === "portal") {
-      checked(await connection.joinRoom("portal"));
+    if (supportsOnlineRoom(id, connection.snapshot().board)) {
+      checked(await connection.joinRoom(id));
       emit(true);
-      openScene();
+      openScene(id);
     } else {
       checked(await connection.leaveWorld());
       disconnectView();
@@ -417,26 +529,59 @@ window.addEventListener("playhouse-game-status", async (event) => {
 });
 window.addEventListener("playhouse-online-state", (event) => {
   if (event.detail.reset) resetPrediction = true;
-  if (event.detail.snapshot.self.roomId === "portal") openScene();
+  if (supportsOnlineRoom(event.detail.snapshot.self.roomId, event.detail.snapshot.board)) openScene(event.detail.snapshot.self.roomId);
   else if (dialog.open) closeScene();
 });
 function showMenu(confirm = false) {
   menu = true;
   confirmLeave = confirm;
   keys.clear();
-  dialog.querySelector(".game-cover").hidden = false;
+  dialog.querySelectorAll(".game-cover").forEach((cover) => (cover.hidden = true));
+  dialog.querySelector(".live-menu").hidden = false;
   $("#live-menu-title").textContent = confirm
     ? "Leave this round?"
     : "Take a moment.";
   $("#live-menu-copy").textContent = confirm
-    ? "Leaving an active round cancels it for both players."
-    : "The online round keeps running. Hold the gold plate, let your teammate cross and pull the lever, then collect both crystals and meet at the exit.";
+    ? "Leaving an active round cancels it for both players. Press Tab, then Enter to confirm; Escape keeps playing."
+    : connection?.snapshot().self.roomId === "workshop" ? workshopGuide : "The online round keeps running. Hold the gold plate, let your teammate cross and pull the lever, then collect both crystals and meet at the exit. Press Tab, then Enter to return to the lobby; Escape resumes.";
   dialog.querySelector("[data-live=leave]").textContent = confirm
     ? "Confirm leave"
     : "Return to lobby";
   dialog.querySelector("[data-live=resume]").focus();
 }
 async function command(cmd) {
+  if (cmd === "result-close") {
+    dialog.querySelector(".live-result").hidden = true;
+    dialog.querySelector(".game-viewport").focus();
+    return;
+  }
+  if (cmd === "replay") {
+    dialog.querySelector(".live-result").hidden = true;
+    if (connection?.state === "connected") {
+      try {
+        checked(await connection.setReady(true));
+      } catch (error) {
+        message(error.message);
+      }
+    }
+    dialog.querySelector(".game-viewport").focus();
+    return;
+  }
+  if (cmd === "help") {
+    intro = true;
+    menu = false;
+    dialog.querySelectorAll(".game-cover").forEach((cover) => (cover.hidden = true));
+    dialog.querySelector(".live-intro").hidden = false;
+    dialog.querySelector("[data-live=intro-close]").focus();
+    return;
+  }
+  if (cmd === "intro-close") {
+    intro = false;
+    introSeen = true;
+    dialog.querySelector(".live-intro").hidden = true;
+    dialog.querySelector(".game-viewport").focus();
+    return;
+  }
   if (cmd === "menu") {
     showMenu();
     return;
@@ -444,7 +589,7 @@ async function command(cmd) {
   if (cmd === "resume") {
     menu = false;
     confirmLeave = false;
-    dialog.querySelector(".game-cover").hidden = true;
+    dialog.querySelectorAll(".game-cover").forEach((cover) => (cover.hidden = true));
     dialog.querySelector(".game-viewport").focus();
     return;
   }
@@ -480,7 +625,7 @@ async function command(cmd) {
     ) {
       const p = view.players[view.active],
         target = targets(view)
-          .filter((t) => t.id !== "plate" && near(p, t))
+          .filter((t) => t.id !== "plate" && t.id !== "power-left" && near(p, t, view.id === "workshop" ? 1.9 : undefined))
           .sort(
             (a, b) =>
               Math.hypot(a.x - p.x, a.z - p.z) -
@@ -499,19 +644,45 @@ dialog.addEventListener("click", (event) => {
   const cmd = event.target.closest("[data-live]")?.dataset.live;
   if (cmd) command(cmd);
 });
-dialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  command(menu ? "resume" : "menu");
-});
+bindDialogEscape(dialog, () =>
+  command(
+    intro
+      ? "intro-close"
+      : menu
+        ? "resume"
+        : !dialog.querySelector(".live-result").hidden
+          ? "result-close"
+          : "menu",
+  ),
+);
 dialog.addEventListener("keydown", (event) => {
   const k = event.key.toLowerCase();
-  if (k === "escape") {
+  if (k === "h" && !event.repeat) {
     event.preventDefault();
-    event.stopPropagation();
-    command(menu ? "resume" : "menu");
+    command("help");
     return;
   }
-  if (menu || event.target !== dialog.querySelector(".game-viewport")) return;
+  const gameViewport = dialog.querySelector(".game-viewport");
+  if (k === "enter" && !event.repeat && event.target === gameViewport) {
+    const snapshot = connection?.snapshot();
+    const me = snapshot?.room.players.find(
+      (player) => player.id === connection.playerId,
+    );
+    const action = enterShortcutAction({
+      introOpen: intro,
+      waiting:
+        connection?.state === "connected" && !snapshot?.room.session,
+      ready: !!me?.ready,
+      menuOpen: menu,
+      resultOpen: !dialog.querySelector(".live-result").hidden,
+    });
+    if (action) {
+      event.preventDefault();
+      command(action === "dismiss-intro" ? "intro-close" : action);
+    }
+    return;
+  }
+  if (menu || event.target !== gameViewport) return;
   if (
     [
       "w",
@@ -544,7 +715,7 @@ function frame(now) {
   last = now;
   const snapshot = connection.snapshot(),
     next = portalView(snapshot, view, resetPrediction),
-    key = next.players.map((p) => (p.id || "") + p.avatarId + p.name).join("|");
+    key = next.id + (next.id === "workshop" ? JSON.stringify(next.config) : "") + next.players.map((p) => (p.id || "") + p.avatarId + p.name).join("|");
   resetPrediction = false;
   if (key !== roster) {
     stage?.dispose();
@@ -574,7 +745,7 @@ function frame(now) {
         Number(keys.has("w") || keys.has("arrowup"));
     if (dx || dz) {
       const p = view.players[view.active],
-        candidate = advancePortal(p, dx, dz, dt, view.authoritativeBridgeOpen);
+        candidate = advancePortal(p, dx, dz, dt, view.authoritativeBridgeOpen, view.id === "workshop");
       Object.assign(p, candidate);
       connection.sendMove({ x: p.x, y: 0, z: p.z }, Math.atan2(dx, dz));
     }
@@ -583,12 +754,15 @@ function frame(now) {
     round = snapshot.room.session,
     result = snapshot.lastFinished;
   $("#live-goal").textContent = round
-    ? round.crystals.every(Boolean)
+    ? view.id === "workshop" ? workshopGuide : round.crystals.every(Boolean)
       ? "Meet at the exit together and press E."
       : round.latched
         ? "Collect both crystals."
         : "Hold the gold plate so your teammate can cross and pull the lever."
     : "Both players choose Ready to begin.";
+  if (round && view.id === "portal") {
+    $("#live-goal").textContent += " " + bridgeStatusLabel(round) + ".";
+  }
   $("#live-team").textContent = snapshot.room.players
     .map(
       (p) =>
@@ -600,7 +774,8 @@ function frame(now) {
   const ready = dialog.querySelector("[data-live=ready]");
   ready.hidden = !!round;
   ready.disabled = connection.state !== "connected" || busy;
-  ready.textContent = me?.ready ? "Not ready" : "Ready";
+  ready.textContent =
+    readyLabel(me, !!round) === "Ready" ? "Enter · Ready up" : readyLabel(me, !!round);
   $("#live-clock").textContent = round
     ? Math.ceil(Math.max(0, view.limit - view.elapsed)) + "s"
     : "Waiting";
@@ -609,9 +784,35 @@ function frame(now) {
       ? "Connection " + connection.state + " — movement is paused locally."
       : !round && result
         ? resultText(result)
-        : "Live development game · Server controls the round";
+        : !round
+          ? me?.ready
+            ? snapshot.room.players.some(
+                (player) => player.id !== me.id && player.ready,
+              )
+              ? "Both players are ready — round starting."
+              : "You are ready — waiting for teammate."
+            : snapshot.room.players.some(
+                (player) => player.id !== me.id && player.ready,
+              )
+              ? "Your teammate is ready — choose Ready."
+              : "Waiting for both players to choose Ready."
+          : "Live development game · Server controls the round";
+  if (result && !round && result.sessionId !== lastResultId) {
+    lastResultId = result.sessionId;
+    $("#live-result-title").textContent =
+      result.outcome === "win"
+        ? "You made it together."
+        : result.outcome === "loss"
+          ? "Time ran out."
+          : "Round cancelled.";
+    $("#live-result-copy").textContent = resultText(result);
+    const replay = dialog.querySelector("[data-live=replay]");
+    replay.hidden = result.outcome === "cancelled";
+    dialog.querySelectorAll(".game-cover").forEach((cover) => (cover.hidden = true));
+    dialog.querySelector(".live-result").hidden = false;
+  }
   const p = view.players[view.active],
-    target = targets(view).find((t) => near(p, t));
+    target = targets(view).find((t) => near(p, t, view.id === "workshop" ? 1.9 : undefined));
   $("#live-prompt").textContent = target
     ? target.id === "plate"
       ? "Stay on the plate to hold the bridge."

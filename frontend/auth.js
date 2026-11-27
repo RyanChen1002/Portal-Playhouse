@@ -1,4 +1,23 @@
 // Keep account creation behind the existing shared client contract.
+export function welcomeView({ online = true, registering = false } = {}) {
+  const primaryAction = online ? (registering ? "signup" : "signin") : "practice";
+  return {
+    online,
+    primaryAction,
+    modeLabel: online ? "Use offline practice instead" : "Sign in to online play",
+    submitLabel:
+      primaryAction === "signup"
+        ? "Create account and continue"
+        : primaryAction === "signin"
+          ? "Sign in and play online"
+          : "Enter practice mode",
+  };
+}
+
+export function notifyAuthenticated(target = window) {
+  target.dispatchEvent(new Event('playhouse-authenticated'));
+}
+
 export async function authenticate(client, mode, { email, password, displayName }) {
   const result = mode === 'signup'
     ? await client.signUp({ email, password, displayName })

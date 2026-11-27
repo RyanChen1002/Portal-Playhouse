@@ -12,7 +12,7 @@ import {
   nextMove,
 } from "./practice.js";
 import { createStage } from "./scene.js";
-import { menuTransition } from "./menu.js";
+import { bindDialogEscape, menuTransition } from "./menu.js";
 
 const dialog = document.createElement("dialog");
 dialog.id = "game-dialog";
@@ -110,7 +110,7 @@ function launch(id, level = 1) {
   dialog.innerHTML = `<div class="game-shell"><div class="game-viewport" tabindex="0" role="group" aria-label="${g.name}. WASD to walk, E interact, Q switch teammate, R rotate."></div>
  <header class="game-top"><div class="game-title"><span class="game-brand">P<span>PLAYHOUSE</span></span><div><p class="game-eyebrow">${g.tag}</p><h1>${g.name}</h1></div></div><div class="game-top-actions"><span class="game-clock" id="game-timer"></span>${button("help", "How to play")}${button("menu", "Menu · Esc")}</div></header>
  <section class="game-goal" aria-label="Current objective"><span class="game-eyebrow">${id === "portal" ? "YOUR NEXT MOVE" : `LEVEL ${level} / 5 · ${levelTitle(session)}`}</span><p id="game-goal"></p><div class="game-progress" id="game-objectives"></div></section>
- <div class="game-team" id="game-team" aria-label="Practice teammates"></div>
+ <div class="game-team" id="game-team" aria-label="Choose which teammate to control"></div>
  <div class="game-job" id="game-job"></div>
  <footer class="game-toolbar"><div class="game-feedback" id="game-feedback" role="status" aria-live="polite"></div><div class="game-prompt" id="game-prompt"></div><div class="game-control-row"><span><kbd>W A S D</kbd> Move</span>${button("interact", "E · Interact")}${button("switch", "Q · Switch teammate")}${["train", "rescue"].includes(id) ? button("rotate", "R · Rotate") : ""}</div><small>Local practice · You control both teammates · Results are not saved online</small></footer>
  <section class="game-cover" id="game-cover" hidden></section></div>`;
@@ -189,7 +189,7 @@ function updateUI() {
     dialog.querySelector("#game-team").innerHTML = s.players
       .map(
         (p, i) =>
-          `<button class="teammate ${s.active === i ? "is-active" : ""}" data-game-command="${s.active === i ? "focus" : "switch"}" aria-pressed="${s.active === i}"><span class="teammate-number">${i + 1}</span><span><b>${s.active === i ? "You are controlling" : "Practice teammate"} ${i + 1}</b><small>${escapeHTML(p.held?.replaceAll("-", " ") || "Hands free")}</small></span></button>`,
+          `<button class="teammate ${s.active === i ? "is-active" : ""}" data-game-command="${s.active === i ? "focus" : "switch"}" aria-label="${s.active === i ? `Player ${i + 1}, selected` : `Select player ${i + 1}`}"><span class="teammate-number">${i + 1}</span><span><b>Player ${i + 1}</b><small>${escapeHTML(p.held?.replaceAll("-", " ") || (s.active === i ? "Selected" : "Tap to control"))}</small></span></button>`,
       )
       .join("");
     dialog.querySelector("#game-goal").textContent = guidance;
@@ -293,17 +293,8 @@ dialog.addEventListener("click", (event) => {
   }
   dialog.querySelector(".game-viewport").focus();
 });
-dialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  request("escape");
-});
+bindDialogEscape(dialog, () => request("escape"));
 dialog.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    request("escape");
-    return;
-  }
   if (
     !session ||
     view !== "playing" ||

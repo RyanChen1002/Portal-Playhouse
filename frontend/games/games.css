@@ -311,6 +311,8 @@
 .game-cover[hidden] {
   display: none;
 }
+.live-ready{min-width:118px;min-height:44px;font-size:14px!important}
+.live-intro ol{padding-left:20px}
 .game-menu {
   background: #fffdf8;
   border: 1px solid #fff;
@@ -436,6 +438,9 @@
   }
 }
 @media (max-width: 520px) {
+  .game-top-actions .game-button[data-live="help"] {
+    display: none;
+  }
   .game-title .game-eyebrow {
     display: none;
   }

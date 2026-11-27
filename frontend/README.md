@@ -1,9 +1,14 @@
 # Local 3D preview
 
+**Version:** 0.20
+
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.20 | 11/26/2026 | Draw static lobby sign textures at scene setup. Live occupancy still updates in room details. Earlier that day (0.19): fixed Escape dismissal and keyboard focus for the lobby room details dialog. |
+| 0.18 | 11/25/2026 | Shared online room availability between the lobby and room entry, and updated welcome text. Earlier that day (0.17): Aligned Workshop lobby signs and controls with the server room list. Earlier that day (0.16): added Workshop routing, state rendering and controls when the runtime advertises the room. Earlier that day (0.15): added inline retry for online history, preserving loaded rows on a failed request. Earlier that day (0.14): shortened the UI history entry and clarified the one-level online release target. |
+| 0.13 | 11/23/2026 | Made online sign-in the default and fixed the sign-in transition. Added Enter/K room entry, H/click room details, and improved Escape handling. Connected lobby paths and glass walkways, simplified the fountain, enlarged room signs and the 3D view, narrowed the sidebar, and removed the sample lock toggle. Earlier that day (0.12): improved Portal Partners instructions, Ready, bridge and result feedback; added paginated history, live occupancy and themed furniture. |
 | 0.11 | 11/22/2026 | Added Create account to the welcome screen using the existing shared signUp method, with clear errors and sign-in/offline switching. Verified 84 frontend/build tests and a mock-client browser signup flow. Earlier today (0.10): added the static Vercel build, shared browser client, public asset list, CI build checks, and built-site preview. |
 | 0.9 | 11/21/2026 | Added local development login, live lobby and Portal Partners frontend integration through the shared client, and separate practice mode for the other games. Recorded simulated-client verification and outstanding hosted checks. Earlier today (0.8): updated scene-first controls and five-level practice progression while preserving original Portal Partners rules. |
 | 0.7 | 11/16/2026 | Added five practice games (0.5), direct-entry rooms (0.6), then a circular furnished courtyard, dismissible rules, and Escape/close controls. Consolidated local plans. Online integration remains pending. |
@@ -13,11 +18,11 @@
 
 Run `node tools/preview-server.cjs` from the repository root and open http://127.0.0.1:4173. A local HTTP server is required for JavaScript modules. The VS Code task **Preview Portal Playhouse locally** runs the same command.
 
-Choose **Explore the playhouse**, select a character, and enter. Alternatively use the sample login `explorer@example.test` / `playhouse-demo`. No real credentials are needed, sent, or saved.
+The welcome screen defaults to online sign-in using an existing development account. Choose **Explore offline practice** to enter without connecting; sample credentials are not required.
 
 ## Local online integration (in progress)
 
-Choose **Sign in to online play** to use an existing development account. This connects the local UI to the development Supabase project and Cloudflare runtime; it does not deploy the frontend. The original offline practice route remains available. Online credentials are handled by the shared client, with its session stored in browser local storage.
+The welcome screen defaults to **Sign in to online play** with an existing development account. This connects the local UI to the development Supabase project and Cloudflare runtime; it does not deploy the frontend. The offline practice route remains available as a secondary choice. Online credentials are handled by the shared client, with its session stored in browser local storage.
 
 Choose **Create an account** to register with a display name, email, and password through the shared client's `signUp` method. A successful response opens character selection using the returned profile. Duplicate names/emails, password errors and service failures keep the form open; passwords are cleared after each attempt. If signup returns no session, the UI explains that email confirmation may be needed and offers switching to sign-in. The current shared client requires a session for signup success; hosted signup settings and email delivery have not been verified. No real accounts were created during the local checks.
 
@@ -27,13 +32,13 @@ Portal Partners uses server room admission, readiness, movement corrections, gam
 
 Verification on 11/21/2026: 71 frontend tests and 191 shared unit tests passed. Browser testing using the existing shared mock verified sign-in, movement seen by a second client, a two-player round, the lever/crystals/exit win, result display, leave confirmation, local-practice return and saved-history rendering. No real hosted accounts were used in these checks. Hosted two-browser acceptance, disconnect/reconnect acceptance and final visual review remain open. The previously recorded local typecheck limitation (missing wrangler; Node 24 instead of required Node 22) has not been resolved.
 
-Keyboard control starts when you enter the lobby and returns after leaving a game. Hold WASD or arrows to walk. Five furnished rooms keep their existing entrances around new lounge and garden floor zones. Press **K** near a doorway to play; **H** opens optional rules. Furniture and walls block movement. Focus loss stops walking.
+Keyboard control starts when you enter the lobby and returns after leaving a game. Hold WASD or arrows to walk. The five furnished rooms keep their existing entrances, connected by themed floor paths around the central fountain. Press **Enter** (or **K**) near a doorway to start its game. Click a room sign or press **H** nearby to open its compact details card; Escape closes it. Furniture and walls block movement. Focus loss stops walking.
 
-Portal Partners is the only networked game. Offline practice uses sample lobby characters; online play displays players received from the shared client. Desktop WebGL and keyboard support are required; mobile is layout preview only.
+The frontend opens Portal Partners online and supports Power-Up Workshop online when the runtime lists its room. Cafe, Rescue and Train remain local practice. The online release target is one level per game. The existing local practice progression is still present. Offline practice uses sample lobby characters; online play displays players received from the shared client. Desktop WebGL and keyboard support are required; mobile is layout preview only.
 
 ## Play the five practice games
 
-Walk to a doorway and press **K**. Each game opens its own 3D play area with objectives, a timer, pause/help, and an earned result. Leaving returns you to the same lobby position. All five rooms start open. The **Show one locked-room example** switch temporarily locks Power-Up Workshop; turn it off to play that game again.
+Walk to a doorway and press **Enter** (or **K**). Each game opens its own 3D play area with objectives, a timer, pause/help, and an earned result. Leaving returns you to the same lobby position. All five rooms are available.
 
 - **Portal Partners:** hold the plate, cross the bridge, collect crystals, and reach the exit together.
 - **Playhouse Cafe:** prepare and serve four matching orders.

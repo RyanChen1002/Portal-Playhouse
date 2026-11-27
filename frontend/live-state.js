@@ -30,8 +30,18 @@ export function portalView(snapshot, previous = null, reset = false) {
     players[active].x = prior.x;
     players[active].z = prior.z;
   }
+  const workshop = snapshot.self.roomId === "workshop";
+  if (workshop) players.forEach((player, index) => {
+    const cable = round?.held?.[index];
+    player.held = cable == null ? null : "cable-" + cable;
+  });
   return {
-    id: "portal",
+    id: workshop ? "workshop" : "portal",
+    ...(workshop && {
+      gears: round?.gears ?? [0, 0, 0],
+      sockets: round?.sockets ?? [false, false, false],
+      config: { gears: round?.gearTargets ?? [1, 2, 3], sockets: round?.socketCables ?? [0, 1, 2] },
+    }),
     sessionId: round?.sessionId,
     players,
     active,
@@ -48,7 +58,7 @@ export function portalView(snapshot, previous = null, reset = false) {
     authoritativeBridgeOpen: round?.bridgeOpen ?? false,
   };
 }
-export function advancePortal(p, dx, dz, dt, bridge) {
+export function advancePortal(p, dx, dz, dt, bridge, workshop = false) {
   const next = { ...p },
     length = Math.hypot(dx, dz);
   if (!length) return next;
@@ -63,7 +73,7 @@ export function advancePortal(p, dx, dz, dt, bridge) {
     };
     if (Math.abs(candidate.x) > 9.6 || Math.abs(candidate.z) > 7.7) continue;
     if (
-      Math.abs(candidate.z) < 1.25 &&
+      !workshop && Math.abs(candidate.z) < 1.25 &&
       (!bridge || Math.abs(candidate.x) > 1.2)
     )
       continue;
@@ -78,7 +88,11 @@ export function resultText(result) {
       ? "You made it together."
       : result.outcome === "loss"
         ? "Time ran out. Try again together."
-        : `Round cancelled${result.reason === "disconnected" ? " — a teammate disconnected" : " — a player left"}.`;
+        : ({
+            disconnected: "Round cancelled because a teammate disconnected.",
+            left: "Round cancelled because a player left.",
+            error: "Round cancelled because the game server encountered an error.",
+          }[result.reason ?? result.cancelReason] ?? "Round cancelled.");
   return (
     outcome +
     " " +
@@ -88,4 +102,75 @@ export function resultText(result) {
       failed: "Result not saved yet.",
     }[result.persistenceStatus] ?? "Save status unavailable.")
   );
+}
+
+export function historyRow(result, selfId = null) {
+  const game =
+    result.gameType === "portal-partners"
+      ? "Portal Partners"
+      : result.gameType === "power-up-workshop" ? "Power-Up Workshop"
+      : String(result.gameType || "Unknown game");
+  const outcome = {
+    win: "Win",
+    loss: "Loss",
+    cancelled: "Cancelled",
+  }[result.outcome] ?? "Unknown";
+  const teammate = result.players?.find(
+    (player) => player.displayName && (!selfId || player.id !== selfId),
+  )?.displayName;
+  return {
+    game,
+    result: outcome,
+    playedWith: teammate || "Teammate unavailable",
+    score: outcome === "Cancelled" ? "No score" : String(result.score ?? "No score"),
+    dateTime: result.completedAt || "Date unavailable",
+    persistenceStatus:
+      ({
+        pending: "Pending",
+        saved: "Saved",
+        failed: "Failed",
+      }[result.persistenceStatus] ?? "Unknown"),
+  };
+}
+
+export function readyLabel(player, roundStarted) {
+  if (roundStarted) return "Round started";
+  if (!player) return "Waiting for account";
+  return player.ready ? "You are ready" : "Ready";
+}
+
+export function enterShortcutAction({
+  introOpen = false,
+  waiting = false,
+  ready = false,
+  menuOpen = false,
+  resultOpen = false,
+}) {
+  if (menuOpen || resultOpen) return null;
+  if (introOpen) return "dismiss-intro";
+  return waiting && !ready ? "ready" : null;
+}
+
+export function roomOccupancyLabel(roomId, room) {
+  if (roomId !== "portal" && !(roomId === "workshop" && room)) return "Local practice";
+  if (!room) return "Waiting · 0/2";
+  const status = room.status === "playing" ? "Playing" : "Waiting";
+  return `${status} · ${room.players?.length || 0}/2`;
+}
+
+export function bridgeStatusLabel(round) {
+  if (!round) return "Bridge closed";
+  if (round.latched) return "Bridge open and latched";
+  return round.bridgeOpen ? "Bridge open" : "Bridge closed";
+}
+
+export function formatHistoryDate(iso, timeZone) {
+  if (!iso) return "Date unavailable";
+  const date = new Date(iso);
+  if (Number.isNaN(date.valueOf())) return "Date unavailable";
+  const options = timeZone ? { timeZone } : undefined;
+  const year = new Intl.DateTimeFormat("en-US", { year: "numeric", ...options }).format(date);
+  const month = new Intl.DateTimeFormat("en-US", { month: "2-digit", ...options }).format(date);
+  const day = new Intl.DateTimeFormat("en-US", { day: "2-digit", ...options }).format(date);
+  return `${month}/${day}/${year}`;
 }
