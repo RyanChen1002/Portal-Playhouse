@@ -1,11 +1,12 @@
 # Portal Playhouse Five-Game Design
 
-**Version:** 0.1
+**Version:** 0.2
 
 ## Change History
 
 | Version | Date | Change |
 | --- | --- | --- |
+| 0.2 | 11/27/2026 | Fixed four tables, clarified Rescue and Train wording, and documented the proposed shared win rule during disconnects. |
 | 0.1 | 11/25/2026 | Created one review document for all five games. Consolidated the three 11/24 drafts and linked the two merged designs. Game rules unchanged. |
 
 Use this page to review the game rules and prepare the remaining Cloudflare implementations. The three drafts below each describe one online level. Review their interaction targets, state, and result handling together before building against them. All games reuse the [shared framework](2026-11-23-game-framework-design.md) and [component contract](../component-contract.md).
@@ -17,6 +18,10 @@ Use this page to review the game rules and prepare the remaining Cloudflare impl
 | Playhouse Cafe | [Draft rules](#playhouse-cafe) | Interface review pending |
 | Room Rescue | [Draft rules](#room-rescue) | Interface review pending |
 | Tiny Train Team | [Draft rules](#tiny-train-team) | Interface review pending |
+
+## Proposed shared win rule
+
+The engine may award a win only while both players are connected. A disconnected player can rejoin during the existing grace period, after which both players can finish together. Grace expiry and explicit leave still cancel the round. The shared engine change is a backend follow-up.
 
 ## Playhouse Cafe
 
@@ -79,7 +84,6 @@ Target IDs and positions use the current practice layout (`y = 0`):
 
 | Target | Position `(x, z)` | Rule |
 | --- | --- | --- |
-| 0.6 | 11/25/2026 | Prepared the draft for team review under doc/specs. Game rules unchanged. |
 | `salad` | `(-7, -5)` | Take raw salad ingredients if hands are empty. |
 | `soup` | `(-3, -5)` | Take raw soup ingredients if hands are empty. |
 | `board` | `(2, -5)` | Prepare carried raw salad. |
@@ -92,8 +96,7 @@ The movement hook rejects movement through the Cafe's existing furniture. The ru
 Furniture collision boxes follow the current practice layout. The values below are center coordinates and half-extents in the X/Z plane:
 
 | Furniture | Center(s) | Half-width | Half-depth |
-| --- | --- | --- |
-| 0.6 | 11/25/2026 | Prepared the draft for team review under doc/specs. Game rules unchanged. | --- |
+| --- | --- | --- | --- |
 | Rear counter row | `(-7, -5)`, `(-3, -5)`, `(2, -5)`, `(7, -5)` | 1.7 | 1.1 |
 | Serving counter | `(6, 4)` | 1.8 | 0.9 |
 | Clear-item station | `(-7, 4)` | 0.8 | 0.8 |
@@ -239,7 +242,6 @@ Target IDs and positions use the current practice layout (`y = 0`):
 
 | Target | Position `(x, z)` | Rule |
 | --- | --- | --- |
-| 0.2 | 11/25/2026 | Prepared the draft for team review under doc/specs. Game rules unchanged. |
 | `item-0` through `item-3` | `(-7, 3i - 5)` | Pick up item `i` if it is not carried and the player has empty hands; if the same player is carrying it, return it here. |
 | `spot-0` through `spot-3` | `(7, 3i - 5)` | Place only the matching item. |
 | `sofa` | `(-5, 0)` | Lift only when both players have empty hands and are within 2.7 units. The player who interacts becomes leader. |
@@ -263,7 +265,7 @@ The partition is centered at `x = 0`, with a doorway open for `|z| <= 1.45`. Cur
 
 ### 6. State and Framework Mapping
 
-The game module uses the shared `GameModule` interface. It does not read the system clock, generate IDs, access storage, or send network messages. Movement, preparation, and reconnect decisions use `RoundView.now` and the player positions/connections passed by the engine.
+The game module uses the shared `GameModule` interface. It does not read the system clock, generate IDs, access storage, or send network messages. Movement and reconnect decisions use `RoundView.now` and the player positions/connections passed by the engine.
 
 The game-specific `game.state` fields should include:
 
@@ -376,7 +378,6 @@ All positions are `(x, z)` with `y = 0`. The route contains six horizontal segme
 
 | Target | Position | Required orientation |
 | --- | --- | --- |
-| 0.2 | 11/25/2026 | Prepared the draft for team review under doc/specs. Game rules unchanged. |
 | `rail-0` | `(-6, 0)` | Horizontal |
 | `rail-1` | `(-3, 0)` | Horizontal |
 | `rail-2` | `(0, 0)` | Horizontal |
@@ -390,7 +391,7 @@ The train starts at `(-9, 0)`. The station platform is beside the final route ma
 
 ### 5. Round Rules
 
-- The round begins with six unplaced rails, an empty track supply, train position `(-9, 0)`, score 0, and a 25-second preparation window.
+- The round begins with six unplaced rails, both players with empty hands, train position `(-9, 0)`, score 0, and a 25-second preparation window.
 - A player may carry one rail at a time. The supply is reusable; a player with a rail in hand must place it before fetching another.
 - The route markers are all horizontal in this level. Proposal for online play: each player's carried rail has its own orientation, begins horizontal when picked up, and changes by 90 degrees on `rotate-track`. This avoids the shared orientation state used by the one-person practice controller.
 - To place a rail, the interacting player must be within 1.9 units of an unfilled marker, hold a rail, and have the correct orientation. The server places that segment once, clears the player's hands, and adds one point.
