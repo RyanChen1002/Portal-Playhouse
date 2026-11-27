@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CorrectionReason } from '../contracts';
-import { admit, boards, card, conn, interact, join, leave, move, only, ready } from './test-helpers';
+import { admit, boards, card, conn, interact, join, lastReply, leave, move, only, ready } from './test-helpers';
 import { setThrowOnStart, testWorld, type TestRound } from './test-game';
 
 const PUSHED = 'pushed' as CorrectionReason;
@@ -417,5 +417,137 @@ describe('hook exceptions', () => {
       expect(only(tw.messagesFor(conn(n)), 'game.finished').map((m) => m.payload.score)).toEqual([2]);
     }
     expect(tw.world.takeFinishedRounds()).toMatchObject([{ cancelReason: 'error', score: 2 }]);
+  });
+});
+
+describe('held win', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const WAITING = 'Waiting for your teammate to reconnect.';
+
+  /** Player 2 disconnects, then player 1 completes a win with score `score`: the win is held. */
+  function heldRound(score = 3): TestRound & { heldAt: string } {
+    const r = testWorld();
+    r.tw.world.connectionLost(conn(2));
+    r.state.score = score;
+    r.state.interactResult = { ok: true, effect: { end: 'win' } };
+    interact(r.tw, 1, r.sid, 'win', 'a-win');
+    return { ...r, heldAt: iso(r.tw.now()) };
+  }
+
+  const finished = (msgs: ReturnType<TestRound['tw']['messagesFor']>) =>
+    only(msgs, 'game.finished').map((m) => m.payload);
+
+  it('a win with the partner disconnected is held', () => {
+    const { tw } = heldRound();
+    const msgs = tw.messagesFor(conn(1));
+    expect(lastReply(msgs)).toMatchObject({ type: 'request.accepted', requestId: 'i-a-win' });
+    // The test game's tick may publish the new score first; exactly one state carries the hold.
+    const held = only(msgs, 'game.state').filter((m) => m.payload.state.winHeldAt !== null);
+    expect(held).toHaveLength(1);
+    expect(held[0]!.payload.state).toMatchObject({ winHeldAt: iso(tw.now()), score: 3 });
+    expect(finished(msgs)).toEqual([]);
+    expect(tw.world.takeFinishedRounds()).toEqual([]);
+    expect(boards(msgs).pop()).toMatchObject({ id: 'test', status: 'playing', score: 3 });
+  });
+
+  it('the round clock stops while held', () => {
+    const { tw } = heldRound();
+    tw.advanceBy(15_000); // past roundMs 10 000, within the 20 s grace
+    tw.world.advance();
+    expect(finished(tw.messagesFor(conn(1)))).toEqual([]);
+    expect(tw.world.takeFinishedRounds()).toEqual([]);
+  });
+
+  it('a tick win at the time-out holds', () => {
+    const { tw, state } = testWorld();
+    tw.world.connectionLost(conn(2));
+    tw.advanceBy(9_999);
+    tw.world.advance();
+    state.nextTick = { end: 'win' };
+    tw.advanceBy(1);
+    tw.world.advance();
+    const msgs = tw.messagesFor(conn(1));
+    expect(finished(msgs)).toEqual([]);
+    expect(only(msgs, 'game.state').pop()!.payload.state).toMatchObject({ winHeldAt: iso(tw.now()) });
+    expect(tw.world.takeFinishedRounds()).toEqual([]);
+  });
+
+  it('interactions are rejected while held', () => {
+    const { tw, sid, state } = heldRound();
+    tw.clear();
+    interact(tw, 1, sid, 'push', 'a-2');
+    expect(tw.messagesFor(conn(1))).toEqual([
+      { type: 'request.error', requestId: 'i-a-2', error: { code: 'INVALID_ACTION', message: WAITING } },
+    ]);
+    expect(state.calls.interact).toHaveLength(1);
+  });
+
+  it('the winning action retried gets its first reply', () => {
+    const { tw, sid } = heldRound();
+    tw.clear();
+    interact(tw, 1, sid, 'win', 'a-win');
+    expect(tw.messagesFor(conn(1))).toEqual([{ type: 'request.accepted', requestId: 'i-a-win', payload: null }]);
+  });
+
+  it.each(['tick', 'view', 'speed', 'afterMove', 'onConnection'])('the module is frozen while held: no %s call', (hook) => {
+    const { tw, state, errors, heldAt } = heldRound();
+    state.throwIn = hook;
+    tw.advanceBy(1000);
+    tw.world.advance();
+    move(tw, 1, { x: -0.6, y: 0, z: 0 });
+    expect(only(tw.messagesFor(conn(1)), 'game.state').pop()!.payload.state).toMatchObject({ winHeldAt: heldAt });
+    tw.world.connectionLost(conn(1));
+    expect(admit(tw, 1).error).toBeNull();
+    expect(errors).toEqual([]);
+    expect(tw.world.takeFinishedRounds()).toEqual([]);
+  });
+
+  it('the win completes when the partner returns', () => {
+    const { tw, heldAt } = heldRound();
+    tw.clear();
+    expect(admit(tw, 2).error).toBeNull();
+    const msgs2 = tw.messagesFor(conn(2));
+    const types = msgs2.map((m) => m.type);
+    expect(types.indexOf('world.snapshot')).toBeLessThan(types.indexOf('game.finished'));
+    expect(only(msgs2, 'world.snapshot')[0]!.payload.room.session).toMatchObject({ winHeldAt: heldAt });
+    for (const msgs of [msgs2, tw.messagesFor(conn(1))]) {
+      expect(finished(msgs)).toMatchObject([{ outcome: 'win', score: 3 }]);
+    }
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'win', cancelReason: null, score: 3 }]);
+  });
+
+  it('both disconnected: the win waits for both', () => {
+    const { tw } = heldRound();
+    tw.world.connectionLost(conn(1));
+    expect(admit(tw, 1).error).toBeNull();
+    expect(finished(tw.messagesFor(conn(1)))).toEqual([]);
+    expect(admit(tw, 2).error).toBeNull();
+    expect(finished(tw.messagesFor(conn(1)))).toMatchObject([{ outcome: 'win', score: 3 }]);
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'win' }]);
+  });
+
+  it('grace expiry cancels a held round with the held score', () => {
+    const { tw, state, errors } = heldRound();
+    state.throwIn = 'score';
+    tw.advanceBy(20_000);
+    tw.world.advance();
+    expect(finished(tw.messagesFor(conn(1)))).toMatchObject([{ outcome: 'cancelled', reason: 'disconnected', score: 3 }]);
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'cancelled', cancelReason: 'disconnected', score: 3 }]);
+    expect(errors).toEqual([]);
+  });
+
+  it('leaving cancels a held round', () => {
+    const { tw } = heldRound();
+    leave(tw, 1);
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'cancelled', cancelReason: 'left', score: 3 }]);
+  });
+
+  it('a win with both connected is not held', () => {
+    const { tw, sid, state } = testWorld();
+    state.score = 2;
+    state.interactResult = { ok: true, effect: { end: 'win' } };
+    interact(tw, 1, sid, 'win');
+    for (const n of [1, 2]) expect(finished(tw.messagesFor(conn(n)))).toMatchObject([{ outcome: 'win', score: 2 }]);
+    expect(tw.world.takeFinishedRounds()).toMatchObject([{ outcome: 'win', score: 2 }]);
   });
 });

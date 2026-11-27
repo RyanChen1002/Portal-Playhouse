@@ -41,6 +41,8 @@ export interface GameStateBase {
   startedAt: string;
   durationSeconds: number;
   serverTime: string;
+  /** When the win was held because a player is disconnected; null otherwise. */
+  winHeldAt: string | null;
 }
 export interface PortalPartnersState extends GameStateBase {
   bridgeOpen: boolean;

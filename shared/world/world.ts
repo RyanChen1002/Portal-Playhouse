@@ -120,6 +120,11 @@ interface Round {
   badScore: number | null;
   /** The last bad speed reported (not finite or negative), so a persistent one is reported once. */
   badSpeed: number | null;
+  /**
+   * Set when a win came while a round player was disconnected: the win waits for both players.
+   * The module is frozen: its score and view are kept here, and no hook but `checkMove` runs.
+   */
+  held: { at: number; score: number; view: object } | null;
 }
 
 const STATE_INTERVAL_MS = 1000;
@@ -253,7 +258,7 @@ export class World {
     const now = this.now();
     for (const room of this.rooms.values()) {
       const round = room.round;
-      if (!round?.game.tick) continue;
+      if (!round?.game.tick || round.held) continue;
       const view = this.roundView(round);
       const effect = this.guarded(room, 'tick', () => round.game.tick!(round.state, view));
       if (effect !== ABORTED) this.applyEffect(room, effect, 'other');
@@ -332,7 +337,7 @@ export class World {
       // Every character counts for the game, including disconnected ones.
       const { game, state } = round;
       const view = this.roundView(round);
-      const speed = this.speedOf(room, round, view, p.card.id);
+      const speed = round.held ? game.arena.speed : this.speedOf(room, round, view, p.card.id);
       if (speed === ABORTED) return;
       area = { bounds: arenaBounds(game), speed };
       path = (f, t) => {
@@ -377,7 +382,7 @@ export class World {
       },
       p.card.id,
     );
-    if (round?.game.afterMove) {
+    if (round?.game.afterMove && !round.held) {
       // The view now holds the mover's new accepted position.
       const view = this.roundView(round);
       const effect = this.guarded(room, 'afterMove', () => round.game.afterMove!(round.state, view, p.card.id));
@@ -401,6 +406,7 @@ export class World {
     }
     const prior = round.actions.get(m.actionId);
     if (prior) return this.replyAction(p, requestId, prior);
+    if (round.held) return { code: 'INVALID_ACTION', message: 'Waiting for your teammate to reconnect.' };
 
     const view = this.roundView(round);
     const r = this.guarded(room, 'interact', () => round.game.interact(round.state, view, p.card.id, m.target));
@@ -534,6 +540,7 @@ export class World {
       actions: new Map(),
       badScore: null,
       badSpeed: null,
+      held: null,
     };
     // The room holds the round before `start` runs, so a throwing `start` can cancel it.
     room.round = round;
@@ -572,7 +579,7 @@ export class World {
     fixedScore?: number,
   ): void {
     const round = room.round!;
-    const score = fixedScore ?? this.scoreOf(room, round, except);
+    const score = fixedScore ?? round.held?.score ?? this.scoreOf(room, round, except);
     if (score === ABORTED) return;
     const result: GameFinished = {
       sessionId: round.sessionId,
@@ -691,6 +698,10 @@ export class World {
         m.card.id,
       );
     }
+    if (effect.end === 'win' && round.playerIds.some((id) => this.players.get(id)?.conn == null)) {
+      this.holdWin(room, round, bumped || origin === 'afterMove');
+      return;
+    }
     if (effect.end) {
       this.finishRound(room, effect.end, null);
       return;
@@ -708,11 +719,36 @@ export class World {
     }
   }
 
+  /**
+   * Holds a win while a round player is disconnected: keeps the score and view, stops the clock
+   * and freezes the module, then sends the held state and score. `notifyConnection` finishes it.
+   */
+  private holdWin(room: RoomState, round: Round, bumped: boolean): void {
+    const score = this.scoreOf(room, round);
+    if (score === ABORTED) return;
+    const view = this.guarded(room, 'view', () => round.game.view(round.state, this.roundView(round)));
+    if (view === ABORTED) return;
+    round.held = { at: this.now(), score, view };
+    if (!bumped) room.revision++;
+    if (!this.sendState(room)) return;
+    if (score !== room.score) {
+      room.score = score;
+      this.broadcastBoard(room);
+    }
+  }
+
   /** Tells the game a round player disconnected or returned in grace. */
   private notifyConnection(p: PlayerState, connected: boolean): void {
     const room = this.roomOf(p);
     const round = room.round;
-    if (!round?.game.onConnection || !round.playerIds.includes(p.card.id)) return;
+    if (!round || !round.playerIds.includes(p.card.id)) return;
+    if (round.held) {
+      if (connected && round.playerIds.every((id) => this.players.get(id)?.conn != null)) {
+        this.finishRound(room, 'win', null, undefined, round.held.score);
+      }
+      return;
+    }
+    if (!round.game.onConnection) return;
     const view = this.roundView(round);
     const effect = this.guarded(room, 'onConnection', () => round.game.onConnection!(round.state, view, p.card.id, connected));
     if (effect !== ABORTED) this.applyEffect(room, effect, 'other');
@@ -805,7 +841,7 @@ export class World {
     };
     for (const room of this.rooms.values()) {
       const round = room.round;
-      if (round) {
+      if (round && !round.held) {
         consider(round.startedAt + this.roundMsOf(room), 0, () => this.finishRound(room, 'loss', null));
       }
     }
@@ -875,12 +911,13 @@ export class World {
   private gameState(room: RoomState): GameStatePayload['state'] | Aborted {
     const round = room.round!;
     const view = this.roundView(round);
-    const fields = this.guarded(room, 'view', () => round.game.view(round.state, view));
+    const fields = round.held ? round.held.view : this.guarded(room, 'view', () => round.game.view(round.state, view));
     if (fields === ABORTED) return fields;
     const base: GameStateBase = {
       startedAt: room.startedAt!,
       durationSeconds: Math.round(this.roundMsOf(room) / 1000),
       serverTime: iso(this.now()),
+      winHeldAt: round.held ? iso(round.held.at) : null,
     };
     return { ...fields, ...base } as GameStatePayload['state'];
   }
